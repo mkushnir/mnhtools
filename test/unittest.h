@@ -3,7 +3,11 @@
 
 #include <stdlib.h>
 #include <time.h>
-//#include "mrkcommon/util.h"
+#include "config.h"
+
+#ifndef HAVE_SRANDOMDEV
+#define srandomdev() srandom(time(NULL))
+#endif
 #ifndef countof
 #   define countof(a) (sizeof(a)/sizeof(a[0]))
 #endif

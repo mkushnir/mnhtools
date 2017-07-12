@@ -81,6 +81,11 @@ AC_FUNC_REALLOC
 
 AC_PRESERVE_HELP_ORDER
 
+AC_CHECK_FUNCS([strdup strtol srandomdev])
+AC_CHECK_HEADERS([limits.h malloc.h stddef.h syslog.h])
+AC_CHECK_HEADER_STDBOOL
+AC_TYPE_SSIZE_T
+
 AC_ARG_ENABLE(debug,
               AC_HELP_STRING([--enable-debug],
                              [Enable debug build (default=no)]),

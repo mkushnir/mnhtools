@@ -56,7 +56,7 @@ static ssize_t
 mnhtesto_body(mnfcgi_record_t *rec, mnbytestream_t *bs, void *udata)
 {
     ssize_t res;
-    mnfcgi_request_t *req;
+    UNUSED mnfcgi_request_t *req;
     struct {
         int bsize;
         int clen;

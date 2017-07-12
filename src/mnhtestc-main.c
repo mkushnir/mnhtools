@@ -8,6 +8,8 @@
 
 #include <openssl/ssl.h>
 
+#include "config.h"
+
 #ifdef HAVE_MALLOC_H
 #   include <malloc.h>
 #endif
@@ -21,7 +23,6 @@
 #include <mnhttpc.h>
 
 #include "diag.h"
-#include "config.h"
 
 #ifndef NDEBUG
 const char *_malloc_options = "AJ";

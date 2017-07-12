@@ -7,6 +7,8 @@
 #include <stdint.h>
 #include <limits.h>
 
+#include "config.h"
+
 #ifdef HAVE_MALLOC_H
 #   include <malloc.h>
 #endif
@@ -19,7 +21,6 @@
 #include <mnfcgi_app.h>
 
 #include "diag.h"
-#include "config.h"
 #include "mnhtesto.h"
 
 #ifndef NDEBUG
