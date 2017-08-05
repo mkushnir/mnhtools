@@ -33,21 +33,34 @@ typedef struct _mnhtesto_quota {
 } mnhtesto_quota_t;
 
 
-#define MNHTESTO_QUOTA_LIMIT(q) ((q)->spec.denom * (q)->spec.denom_unit.mult)
-#define MNHTESTO_QUOTA_UNIT(q) ((q)->spec.divisor * (q)->spec.divisor_unit.mult)
+#define MNHTESTO_QUOTA_LIMIT(q) \
+    ((q)->spec.denom * (q)->spec.denom_unit.mult)
+
+#define MNHTESTO_QUOTA_UNITS(q) \
+    ((q)->spec.divisor * (q)->spec.divisor_unit.mult)
+
+#define MNHTESTO_QUOTAS(q, _ts) \
+    (((double)(_ts - (q)->ts)) / MNHTESTO_QUOTA_UNITS(q))
+
 
 #define MNHTESTO_QUOTA_PER_UNIT(q)  \
-    (MNHTESTO_QUOTA_LIMIT(q) / MNHTESTO_QUOTA_UNIT(q))
+    (MNHTESTO_QUOTA_LIMIT(q) / MNHTESTO_QUOTA_UNITS(q))
 
 
-#define MNHTESTO_IN_QUOTA(q, _ts)                                      \
-    INB1((q)->ts,                                                      \
-         (_ts),                                                        \
-         ((q)->ts + ((q)->spec.divisor * (q)->spec.divisor_unit.mult)))\
+#define MNHTESTO_IN_QUOTA(q, _ts)              \
+    INB1((q)->ts,                              \
+         (_ts),                                \
+         ((q)->ts + MNHTESTO_QUOTA_UNITS(q)))  \
 
 
 #define MNHTESTO_QUOTA_PRORATE_PER_UNIT(q, v, _ts)  \
-    (v) / ((double)(_ts - (q)->ts))
+    ((v) / ((double)(_ts - (q)->ts)))
+
+
+#define MNHTESTO_QUOTA_PRORATE(q, v, _ts)      \
+    ((v) /                                     \
+     ((double)(_ts - (q)->ts)) *               \
+     MNHTESTO_QUOTAS(q, _ts))                  \
 
 
 extern mnbytes_t _x_mnhtesto_quota;

@@ -1,3 +1,4 @@
+#include <inttypes.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <syslog.h>
@@ -110,27 +111,65 @@ mnhtesto_update_quota(mnfcgi_request_t *req, int amount)
                      * 200
                      */
                 } else {
+                    mnbytes_t *s, *ss, *sss;
+
                     /*
                      * 429
                      */
                     res = -1;
+
+                    s = mnhtest_unit_str(&quota->spec.denom_unit,
+                                         quota->value, 0);
+                    ss = mnhtest_unit_str(&quota->spec.denom_unit,
+                                          quota->spec.denom, 0);
+                    sss = mnhtest_unit_str(&quota->spec.divisor_unit,
+                                           quota->spec.divisor, 0);
+                    CTRACE("current quota %s overuse: %s (over %s) per %s",
+                           BDATA(qname),
+                           BDATA(s),
+                           BDATA(ss),
+                           BDATA(sss));
+                    BYTES_DECREF(&s);
+                    BYTES_DECREF(&ss);
+                    BYTES_DECREF(&sss);
                 }
 
             } else {
-                double v, vv;
+                double v, vv, n;
 
                 v = quota->value + (double)amount;
-                vv = MNHTESTO_QUOTA_PRORATE_PER_UNIT(quota, v, now);
+                vv = MNHTESTO_QUOTA_PRORATE(quota, v, now);
+                n = 2.0;
 
                 quota_init(quota, now);
                 assert(MNHTESTO_IN_QUOTA(quota, now));
 
-                if (vv > (MNHTESTO_QUOTA_PER_UNIT(quota) * 2.0)) {
+                if (vv >= (MNHTESTO_QUOTA_PER_UNIT(quota) *
+                          MNHTESTO_QUOTAS(quota, now))) {
+                    mnbytes_t *s, *ss, *sss;
+
                     /*
                      * previous or current quota overuse, 429
                      */
                     quota->value = v;
                     res = -1;
+
+                    s = mnhtest_unit_str(&quota->spec.denom_unit,
+                                         quota->value, 0);
+                    ss = mnhtest_unit_str(&quota->spec.denom_unit,
+                                          quota->spec.denom, 0);
+                    sss = mnhtest_unit_str(&quota->spec.divisor_unit,
+                                           quota->spec.divisor, 0);
+                    CTRACE("previous quota %s (%" PRId64 ") overuse: "
+                           "%s (over %s) per %s",
+                           BDATA(qname),
+                           quota->ts,
+                           BDATA(s),
+                           BDATA(ss),
+                           BDATA(sss));
+                    BYTES_DECREF(&s);
+                    BYTES_DECREF(&ss);
+                    BYTES_DECREF(&sss);
 
                 } else {
                     /*
@@ -292,7 +331,7 @@ static void
 quota_init(mnhtesto_quota_t *quota, uint64_t now)
 {
     quota->ts = now;
-    quota->ts -= quota->ts % (unsigned)MNHTESTO_QUOTA_UNIT(quota);
+    quota->ts -= quota->ts % (unsigned)MNHTESTO_QUOTA_UNITS(quota);
     quota->value = 0.0;
 }
 
