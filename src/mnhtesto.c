@@ -15,8 +15,6 @@
 #include "config.h"
 #include "mnhtesto.h"
 
-static void quota_init(mnhtesto_quota_t *, uint64_t);
-
 static mnbytes_t _not_implemented = BYTES_INITIALIZER("Not Implemented");
 static mnbytes_t _server = BYTES_INITIALIZER("Server");
 static mnbytes_t _date = BYTES_INITIALIZER("Date");
@@ -82,6 +80,16 @@ mnhtesto_body(mnfcgi_record_t *rec, mnbytestream_t *bs, void *udata)
 }
 
 
+static void
+quota_init(mnhtesto_quota_t *quota, uint64_t now)
+{
+    quota->ts = now;
+    quota->ts -= quota->ts % (unsigned)MNHTESTO_QUOTA_UNITS(quota);
+    quota->value = 0.0;
+    quota->prorated = 0.0;
+}
+
+
 static int
 mnhtesto_update_quota(mnfcgi_request_t *req, int amount)
 {
@@ -106,7 +114,7 @@ mnhtesto_update_quota(mnfcgi_request_t *req, int amount)
             now = MRKTHR_GET_NOW_SEC();
             if (MNHTESTO_IN_QUOTA(quota, now)) {
                 quota->value += (double)amount;
-                if (quota->value < MNHTESTO_QUOTA_LIMIT(quota)) {
+                if (quota->value <= MNHTESTO_QUOTA_LIMIT(quota)) {
                     /*
                      * 200
                      */
@@ -129,55 +137,64 @@ mnhtesto_update_quota(mnfcgi_request_t *req, int amount)
                            BDATA(s),
                            BDATA(ss),
                            BDATA(sss));
+
                     BYTES_DECREF(&s);
                     BYTES_DECREF(&ss);
                     BYTES_DECREF(&sss);
                 }
 
             } else {
-                double v, vv;
+                quota->prorated = MNHTESTO_QUOTA_PRORATE(
+                    quota, quota->value + (double)amount, now);
 
-                v = quota->value + (double)amount;
-                vv = MNHTESTO_QUOTA_PRORATE(quota, v, now);
-
-                quota_init(quota, now);
-                assert(MNHTESTO_IN_QUOTA(quota, now));
-
-                if (vv >= (MNHTESTO_QUOTA_PER_UNIT(quota) *
-                          MNHTESTO_QUOTAS(quota, now))) {
-                    mnbytes_t *s, *ss, *sss;
-
-                    /*
-                     * previous or current quota overuse, 429
-                     */
-                    quota->value = v;
-                    res = -1;
-
-                    s = mnhtest_unit_str(&quota->spec.denom_unit,
-                                         quota->value, 0);
-                    ss = mnhtest_unit_str(&quota->spec.denom_unit,
-                                          quota->spec.denom, 0);
-                    sss = mnhtest_unit_str(&quota->spec.divisor_unit,
-                                           quota->spec.divisor, 0);
-                    CTRACE("previous quota %s (%" PRId64 ") overuse: "
-                           "%s (over %s) per %s",
-                           BDATA(qname),
-                           quota->ts,
-                           BDATA(s),
-                           BDATA(ss),
-                           BDATA(sss));
-                    BYTES_DECREF(&s);
-                    BYTES_DECREF(&ss);
-                    BYTES_DECREF(&sss);
-
-                } else {
+                if (quota->prorated <= MNHTESTO_QUOTA_LIMIT(quota)) {
                     /*
                      * 200
                      */
-                    quota->value = (double)amount;
+                    quota_init(quota, now);
+                    assert(MNHTESTO_IN_QUOTA(quota, now));
+                    quota->value = quota->prorated;
+
+                } else {
+                    mnbytes_t *xtot, *ytot, *xp, *xnom, *ynom;
+
+                    /*
+                     * previous quota overuse, 429
+                     */
+                    quota->value += (double)amount;
+                    res = -1;
+
+                    xtot = mnhtest_unit_str(&quota->spec.denom_unit,
+                                         quota->value, 0);
+                    ytot = mnhtest_unit_str(&quota->spec.divisor_unit,
+                                           (double)(now - quota->ts), 0);
+                    xp = mnhtest_unit_str(&quota->spec.denom_unit,
+                                          quota->prorated, 0);
+                    xnom = mnhtest_unit_str(&quota->spec.denom_unit,
+                                           quota->spec.denom, 0);
+                    ynom = mnhtest_unit_str(&quota->spec.divisor_unit,
+                                           quota->spec.divisor, 0);
+                    CTRACE("previous quota %s (%" PRId64 ") overuse: "
+                           "%s per %s (prorated %s) (over %s per %s)",
+                           BDATA(qname),
+                           quota->ts,
+                           BDATA(xtot),
+                           BDATA(ytot),
+                           BDATA(xp),
+                           BDATA(xnom),
+                           BDATA(ynom));
+
+                    BYTES_DECREF(&xtot);
+                    BYTES_DECREF(&ytot);
+                    BYTES_DECREF(&xp);
+                    BYTES_DECREF(&xnom);
+                    BYTES_DECREF(&ynom);
+
                 }
             }
         }
+    } else {
+        CTRACE("no quota");
     }
 
     return res;
@@ -232,6 +249,8 @@ mnhtesto_root_get(mnfcgi_request_t *req, RESERVED void *__udata)
 
     params.tts = (int)(1 << params.delay);
 
+    ++nreq;
+
     if (mnhtesto_update_quota(req, params.clen) != 0) {
         mnfcgi_app_error(req, 429, &_too_much);
         goto end;
@@ -271,7 +290,6 @@ mnhtesto_root_get(mnfcgi_request_t *req, RESERVED void *__udata)
             break;
         }
     }
-    ++nreq;
     nbytes += params.clen;
 
 end:
@@ -324,15 +342,6 @@ static mnfcgi_app_endpoint_table_t endpoints[] = {
     { &__qwea, {mnhtesto_root_get, NULL,} },
     { &__qweb, {mnhtesto_root_get, NULL,} },
 };
-
-
-static void
-quota_init(mnhtesto_quota_t *quota, uint64_t now)
-{
-    quota->ts = now;
-    quota->ts -= quota->ts % (unsigned)MNHTESTO_QUOTA_UNITS(quota);
-    quota->value = 0.0;
-}
 
 
 static int

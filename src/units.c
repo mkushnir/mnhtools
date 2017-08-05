@@ -173,10 +173,10 @@ mnhtest_unit_str(mnhtest_unit_t *unit, double v, int flags)
             if (flags & MNHTEST_UNIT_STR_SHORT) {
                 res = bytes_new_from_str("req");
             } else {
-                res = bytes_printf("%dreq", (int)v);
+                res = bytes_printf("%lfreq", v);
             }
         } else {
-            res = bytes_printf("%dreq", (int)v);
+            res = bytes_printf("%lfreq", v);
         }
     } else if (unit->ty == MNHTEST_UBYTE){
         if (unit->mult >= (double)(1 << 30)) {
@@ -199,9 +199,9 @@ mnhtest_unit_str(mnhtest_unit_t *unit, double v, int flags)
             res = bytes_printf("%lfmin", v);
         } else {
             if (flags & MNHTEST_UNIT_STR_SHORT) {
-                res = bytes_printf("%dsec", (int)v);
-            } else {
                 res = bytes_new_from_str("sec");
+            } else {
+                res = bytes_printf("%dsec", (int)v);
             }
         }
     } else {

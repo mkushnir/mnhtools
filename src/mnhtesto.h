@@ -30,6 +30,7 @@ typedef struct _mnhtesto_quota {
     mnhtesto_quota_spec_t spec;
     uint64_t ts;
     double value;
+    double prorated;
 } mnhtesto_quota_t;
 
 
@@ -57,10 +58,8 @@ typedef struct _mnhtesto_quota {
     ((v) / ((double)(_ts - (q)->ts)))
 
 
-#define MNHTESTO_QUOTA_PRORATE(q, v, _ts)      \
-    ((v) /                                     \
-     ((double)(_ts - (q)->ts)) *               \
-     MNHTESTO_QUOTAS(q, _ts))                  \
+#define MNHTESTO_QUOTA_PRORATE(q, v, _ts)   \
+    (MNHTESTO_QUOTA_PRORATE_PER_UNIT(q, v, _ts) * MNHTESTO_QUOTA_UNITS(q))
 
 
 extern mnbytes_t _x_mnhtesto_quota;
