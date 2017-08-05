@@ -38,6 +38,7 @@ static mnbytes_t _dlay = BYTES_INITIALIZER("dlay");
 static mnbytes_t _connection = BYTES_INITIALIZER("Connection");
 static mnbytes_t _proxy_connection = BYTES_INITIALIZER("Proxy-Connection");
 static mnbytes_t _close = BYTES_INITIALIZER("close");
+static mnbytes_t _x_mnhtesto_quota = BYTES_INITIALIZER("x-mnhtesto-quota");
 
 static int develop = 0;
 static int keepalive = 0;
@@ -46,6 +47,8 @@ static int keepalive = 0;
 #define MNHTEST_PARALLEL_DEFAULT MNHTEST_PARALLEL_MIN
 static int parallel = 0;
 static int batch_pause;
+static int use_bsize = 0;
+static int use_delay = 0;
 
 /*
  * Runtime.
@@ -57,7 +60,14 @@ static bool sigshutdown_sent = false;
  * mnbytes_t *
  */
 static mnarray_t urls;
+/*
+ * mnhtestc_header_t
+ */
 static mnarray_t headers;
+/*
+ * mnbytes_t *
+ */
+static mnarray_t quotas;
 static mnbytes_t *proxy_host;
 static mnbytes_t *proxy_port;
 
@@ -84,6 +94,12 @@ static struct option optinfo[] = {
     {"pause", required_argument, &batch_pause, 'z'},
 #define MNHTESTC_OPT_HEADER     8
     {"header", required_argument, NULL, 'H'},
+#define MNHTESTC_OPT_DELAY      9
+    {"delay", required_argument, NULL, 'D'},
+#define MNHTESTC_OPT_BSIZE      10
+    {"bsize", required_argument, NULL, 'B'},
+#define MNHTESTC_OPT_QUOTA      11
+    {"quota", required_argument, NULL, 'Q'},
 
     {NULL, 0, NULL, 0},
 };
@@ -109,6 +125,20 @@ randomdelay(void)
 }
 
 
+static mnbytes_t *
+randomquota(void)
+{
+    mnbytes_t *res = NULL;
+
+    if (quotas.elnum > 0) {
+        mnbytes_t **p;
+        if ((p = array_get(&quotas, random() % quotas.elnum)) != NULL) {
+            res = *p;
+        }
+    }
+    return res;
+}
+
 static int
 url_item_fini(mnbytes_t **s)
 {
@@ -122,6 +152,14 @@ mnhtestc_header_item_fini(mnhtestc_header_t *header)
 {
     BYTES_DECREF(&header->key);
     BYTES_DECREF(&header->value);
+    return 0;
+}
+
+
+static int
+quota_item_fini(mnbytes_t **s)
+{
+    BYTES_DECREF(s);
     return 0;
 }
 
@@ -235,14 +273,11 @@ mycb2(mnbytes_t **s, UNUSED void *udata)
     int res = 0;
     mnhttpc_t *client = udata;
     mnhttpc_request_t *req = NULL;
-    int bsize, delay;
+    int bsize = -1, delay = -1;
 
     if (shutting_down) {
         goto end;
     }
-    bsize = randombsize();
-    delay = randomdelay();
-    //CTRACE("url=%s bsize=%d delay=%d", BDATASAFE(*s), bsize, delay);
     if ((req = mnhttpc_get_new(client,
                                proxy_host,
                                proxy_port,
@@ -255,8 +290,15 @@ mycb2(mnbytes_t **s, UNUSED void *udata)
         res = 1;
         goto end;
     }
-    mnhttpc_request_out_qterm_addb(req, &_bsiz, bytes_printf("%d", bsize));
-    mnhttpc_request_out_qterm_addb(req, &_dlay, bytes_printf("%d", delay));
+    if (use_bsize) {
+        bsize = randombsize();
+        mnhttpc_request_out_qterm_addb(req, &_bsiz, bytes_printf("%d", bsize));
+    }
+    if (use_delay) {
+        delay = randomdelay();
+        mnhttpc_request_out_qterm_addb(req, &_dlay, bytes_printf("%d", delay));
+    }
+    //CTRACE("url=%s bsize=%d delay=%d", BDATASAFE(*s), bsize, delay);
     (void)mnhttpc_request_out_field_addb(req, &_connection, &_close);
     (void)mnhttpc_request_out_field_addb(req, &_proxy_connection, &_close);
     (void)array_traverse(&headers, (array_traverser_t)add_header_cb, req);
@@ -279,14 +321,12 @@ mycb1(mnbytes_t **s, void *udata)
     int res = 0;
     mnhttpc_t *client = udata;
     mnhttpc_request_t *req = NULL;
-    int bsize, delay;
+    int bsize = -1, delay = -1;
+    mnbytes_t *quota;
 
     if (shutting_down) {
         goto end;
     }
-    bsize = randombsize();
-    delay = randomdelay();
-    //CTRACE("url=%s bsize=%d delay=%d", BDATASAFE(*s), bsize, delay);
     if ((req = mnhttpc_get_new(client,
                                proxy_host,
                                proxy_port,
@@ -299,8 +339,18 @@ mycb1(mnbytes_t **s, void *udata)
         res = 1;
         goto end;
     }
-    mnhttpc_request_out_qterm_addb(req, &_bsiz, bytes_printf("%d", bsize));
-    mnhttpc_request_out_qterm_addb(req, &_dlay, bytes_printf("%d", delay));
+    if (use_bsize) {
+        bsize = randombsize();
+        mnhttpc_request_out_qterm_addb(req, &_bsiz, bytes_printf("%d", bsize));
+    }
+    if (use_delay) {
+        delay = randomdelay();
+        mnhttpc_request_out_qterm_addb(req, &_dlay, bytes_printf("%d", delay));
+    }
+    if ((quota = randomquota()) != NULL) {
+        mnhttpc_request_out_field_addb(req, &_x_mnhtesto_quota, quota);
+    }
+    //CTRACE("url=%s bsize=%d delay=%d", BDATASAFE(*s), bsize, delay);
     (void)array_traverse(&headers, (array_traverser_t)add_header_cb, req);
     if (shutting_down) {
         goto end;
@@ -411,10 +461,26 @@ main(int argc, char **argv)
         FAIL("array_init");
     }
 
-    while ((ch = getopt_long(argc, argv, "AH:hP:p:u:Vz:", optinfo, &idx)) != -1) {
+    if (array_init(&quotas,
+                   sizeof(mnbytes_t *),
+                   0,
+                   NULL,
+                   (array_finalizer_t)quota_item_fini) != 0) {
+        FAIL("array_init");
+    }
+
+    while ((ch = getopt_long(argc, argv, "AB:D:H:hP:p:Q:u:Vz:", optinfo, &idx)) != -1) {
         switch (ch) {
         case 'A':
             keepalive = 1;
+            break;
+
+        case 'B':
+            use_bsize = 1;
+            break;
+
+        case 'D':
+            use_delay = 1;
             break;
 
         case 'H':
@@ -467,6 +533,16 @@ main(int argc, char **argv)
             }
             break;
 
+        case 'Q':
+            {
+                mnbytes_t **quota;
+                if (MRKUNLIKELY((quota = array_incr(&quotas)) == NULL)) {
+                    FAIL("array_incr");
+                }
+                *quota = bytes_new_from_str(optarg);
+                BYTES_INCREF(*quota);
+            }
+            break;
 
         case 'u':
             {

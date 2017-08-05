@@ -112,21 +112,18 @@ finiall(void)
 static void
 usage(char *p)
 {
-    printf("Usage: %s OPTIONS\n"
-        "\n"
-        "Options:\n"
-        "  --help|-h                    Show this message and exit.\n"
-        "  --version|-V                 Print version and exit.\n"
-        "  --develop                    Run in develop mode.\n"
-        "  --host|-H                    Host to listen on. Default %s\n"
-        "  --port|-P                    Port to listen on. Required.\n"
-        "  --max-conn|-C                Max concurrent connections.\n"
-        "                               Default %d.\n"
-        "  --max-req|-R                 Max concurrent requests.\n"
-        "                               Default %d.\n"
-        "  --quota|-Q                   Apply this quota. Multiple.\n"
-        "                               Quota selector is %s:\n"
-        "                               HTTP header\n"
+    printf("Usage: %s [OPTIONS]\n"
+"\n"
+"Options:\n"
+"  --help|-h        Show this message and exit.\n"
+"  --version|-V     Print version and exit.\n"
+"  --develop        Run in develop mode.\n"
+"  --host|-H        Host to listen on. Default %s\n"
+"  --port|-P        Port to listen on. Required.\n"
+"  --max-conn|-C    Max concurrent connections. Default %d.\n"
+"  --max-req|-R     Max concurrent requests. Default %d.\n"
+"  --quota|-Q       Apply this quota. Multiple. Quota selector is\n"
+"                   %s: HTTP header.\n"
         ,
         basename(p),
         MNHTESTO_DEFAULT_HOST,

@@ -21,6 +21,8 @@ then
         -u https://$host:8443/qwe09 \
         -u https://$host:8443/qwe0a \
         -u https://$host:8443/qwe0b \
+        -Q qwe:1kb/5sec \
+        -Q asd:1mb/5sec \
         -p1000 -A 2>&1 | tee out-c
 
 else

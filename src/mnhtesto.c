@@ -14,6 +14,7 @@
 #include "config.h"
 #include "mnhtesto.h"
 
+static void quota_init(mnhtesto_quota_t *, uint64_t);
 
 static mnbytes_t _not_implemented = BYTES_INITIALIZER("Not Implemented");
 static mnbytes_t _server = BYTES_INITIALIZER("Server");
@@ -37,8 +38,10 @@ static mnbytes_t __qwe9 = BYTES_INITIALIZER("/qwe09");
 static mnbytes_t __qwea = BYTES_INITIALIZER("/qwe0a");
 static mnbytes_t __qweb = BYTES_INITIALIZER("/qwe0b");
 static mnbytes_t _ok = BYTES_INITIALIZER("OK");
+static mnbytes_t _too_much = BYTES_INITIALIZER("Too Much");
 
 mnbytes_t _x_mnhtesto_quota = BYTES_INITIALIZER("x-mnhtesto-quota");
+mnbytes_t _http_x_mnhtesto_quota = BYTES_INITIALIZER("HTTP_X_MNHTESTO_QUOTA");
 
 
 #define BSIZE_MIN 10
@@ -79,9 +82,73 @@ mnhtesto_body(mnfcgi_record_t *rec, mnbytestream_t *bs, void *udata)
 
 
 static int
+mnhtesto_update_quota(mnfcgi_request_t *req, int amount)
+{
+    int res = 0;
+    mnbytes_t *qname;
+
+    if ((qname = mnfcgi_request_get_param(req,
+                                          &_http_x_mnhtesto_quota)) != NULL) {
+        mnhash_item_t *hit;
+
+        if ((hit = hash_get_item(&quotas, qname)) != NULL) {
+            mnhtesto_quota_t *quota;
+            uint64_t now;
+
+            quota = hit->value;
+            if (quota->spec.denom_unit.ty == MNHTEST_UREQ) {
+                amount = 1;
+            }
+            /*
+             * quota update
+             */
+            now = MRKTHR_GET_NOW_SEC();
+            if (MNHTESTO_IN_QUOTA(quota, now)) {
+                quota->value += (double)amount;
+                if (quota->value < MNHTESTO_QUOTA_LIMIT(quota)) {
+                    /*
+                     * 200
+                     */
+                } else {
+                    /*
+                     * 429
+                     */
+                    res = -1;
+                }
+
+            } else {
+                double v, vv;
+
+                v = quota->value + (double)amount;
+                vv = MNHTESTO_QUOTA_PRORATE_PER_UNIT(quota, v, now);
+
+                quota_init(quota, now);
+                assert(MNHTESTO_IN_QUOTA(quota, now));
+
+                if (vv > (MNHTESTO_QUOTA_PER_UNIT(quota) * 2.0)) {
+                    /*
+                     * previous or current quota overuse, 429
+                     */
+                    quota->value = v;
+                    res = -1;
+
+                } else {
+                    /*
+                     * 200
+                     */
+                    quota->value = (double)amount;
+                }
+            }
+        }
+    }
+
+    return res;
+}
+
+static int
 mnhtesto_root_get(mnfcgi_request_t *req, RESERVED void *__udata)
 {
-    int res;
+    int res = 0;
     BYTES_ALLOCA(_op, "op");
     BYTES_ALLOCA(_bsiz, "bsiz");
     BYTES_ALLOCA(_dlay, "dlay");
@@ -126,6 +193,11 @@ mnhtesto_root_get(mnfcgi_request_t *req, RESERVED void *__udata)
     }
 
     params.tts = (int)(1 << params.delay);
+
+    if (mnhtesto_update_quota(req, params.clen) != 0) {
+        mnfcgi_app_error(req, 429, &_too_much);
+        goto end;
+    }
 
     if (MRKUNLIKELY((res = mnfcgi_request_status_set(req, 200, &_ok)) != 0)) {
         goto end;
@@ -216,6 +288,25 @@ static mnfcgi_app_endpoint_table_t endpoints[] = {
 };
 
 
+static void
+quota_init(mnhtesto_quota_t *quota, uint64_t now)
+{
+    quota->ts = now;
+    quota->ts -= quota->ts % (unsigned)MNHTESTO_QUOTA_UNIT(quota);
+    quota->value = 0.0;
+}
+
+
+static int
+quota_item_init(UNUSED mnbytes_t *qname,
+                mnhtesto_quota_t *quota,
+                UNUSED void *udata)
+{
+    quota_init(quota, MRKTHR_GET_NOW_SEC());
+    return 0;
+}
+
+
 int
 mnhtesto_app_init(mnfcgi_app_t *app)
 {
@@ -232,6 +323,7 @@ mnhtesto_app_init(mnfcgi_app_t *app)
         d[i] = 'Y';
     }
 
+    hash_traverse(&quotas, (hash_traverser_t)quota_item_init, NULL);
     return 0;
 }
 
@@ -265,15 +357,15 @@ parse_quota(char *s)
         FAIL("malloc");
     }
 
-    if (mnhtest_unit_parse(&quota->denom_unit,
+    if (mnhtest_unit_parse(&quota->spec.denom_unit,
                            denom,
-                           &quota->denom) == NULL) {
+                           &quota->spec.denom) == NULL) {
         goto err;
     }
 
-    if (mnhtest_unit_parse(&quota->divisor_unit,
+    if (mnhtest_unit_parse(&quota->spec.divisor_unit,
                            divisor,
-                           &quota->divisor) == NULL) {
+                           &quota->spec.divisor) == NULL) {
         goto err;
     }
 
