@@ -135,11 +135,10 @@ mnhtesto_update_quota(mnfcgi_request_t *req, int amount)
                 }
 
             } else {
-                double v, vv, n;
+                double v, vv;
 
                 v = quota->value + (double)amount;
                 vv = MNHTESTO_QUOTA_PRORATE(quota, v, now);
-                n = 2.0;
 
                 quota_init(quota, now);
                 assert(MNHTESTO_IN_QUOTA(quota, now));
