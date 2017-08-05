@@ -28,9 +28,15 @@
 const char *_malloc_options = "AJ";
 #endif
 
+typedef struct {
+    mnbytes_t *key;
+    mnbytes_t *value;
+} mnhtestc_header_t;
+
 static mnbytes_t _bsiz = BYTES_INITIALIZER("bsiz");
 static mnbytes_t _dlay = BYTES_INITIALIZER("dlay");
 static mnbytes_t _connection = BYTES_INITIALIZER("Connection");
+static mnbytes_t _proxy_connection = BYTES_INITIALIZER("Proxy-Connection");
 static mnbytes_t _close = BYTES_INITIALIZER("close");
 
 static int develop = 0;
@@ -39,6 +45,7 @@ static int keepalive = 0;
 #define MNHTEST_PARALLEL_MAX 1000
 #define MNHTEST_PARALLEL_DEFAULT MNHTEST_PARALLEL_MIN
 static int parallel = 0;
+static int batch_pause;
 
 /*
  * Runtime.
@@ -50,24 +57,34 @@ static bool sigshutdown_sent = false;
  * mnbytes_t *
  */
 static mnarray_t urls;
+static mnarray_t headers;
+static mnbytes_t *proxy_host;
+static mnbytes_t *proxy_port;
 
 static unsigned long nreq;
 static unsigned long nbytes;
 
 
 static struct option optinfo[] = {
-#define MNHTESTC_OPT_HELP 0
+#define MNHTESTC_OPT_HELP       0
     {"help", no_argument, NULL, 'h'},
-#define MNHTESTC_OPT_VERSION 1
+#define MNHTESTC_OPT_VERSION    1
     {"version", no_argument, NULL, 'V'},
-#define MNHTESTC_OPT_DEVELOP 2
+#define MNHTESTC_OPT_DEVELOP    2
     {"develop", no_argument, &develop, 1},
-#define MNHTESTC_OPT_KEEPALIVE 3
+#define MNHTESTC_OPT_KEEPALIVE  3
     {"keepalive", no_argument, &keepalive, 'A'},
-#define MNHTESTC_OPT_PARALLEL 4
+#define MNHTESTC_OPT_PARALLEL   4
     {"parallel", required_argument, &parallel, 'p'},
-#define MNHTESTC_OPT_URL 5
+#define MNHTESTC_OPT_URL        5
     {"url", required_argument, NULL, 'u'},
+#define MNHTESTC_OPT_PROXY      6
+    {"proxy", required_argument, NULL, 'P'},
+#define MNHTESTC_OPT_PAUSE      7
+    {"pause", required_argument, &batch_pause, 'z'},
+#define MNHTESTC_OPT_HEADER     8
+    {"header", required_argument, NULL, 'H'},
+
     {NULL, 0, NULL, 0},
 };
 
@@ -100,20 +117,35 @@ url_item_fini(mnbytes_t **s)
 }
 
 
+static int
+mnhtestc_header_item_fini(mnhtestc_header_t *header)
+{
+    BYTES_DECREF(&header->key);
+    BYTES_DECREF(&header->value);
+    return 0;
+}
+
+
 static void
 usage(char *p)
 {
     printf("Usage: %s OPTIONS\n"
-        "\n"
-        "Options:\n"
-        "  --help|-h                    Show this message and exit.\n"
-        "  --version|-V                 Print version and exit.\n"
-        "  --develop                    Run in develop mode.\n"
-        "  --keepalive|-A               Keep the connection alive.\n"
-        "                               Default is false.\n"
-        " --parallel=N|-p N             Parallel connections.\n"
-        "                               Default is %d.\n"
-        " --url=URL|-u URL              URL to query. Required. Multiple.\n"
+"\n"
+"Options:\n"
+"  --help|-h                    Show this message and exit.\n"
+"  --version|-V                 Print version and exit.\n"
+"  --develop                    Run in develop mode.\n"
+"  --keepalive|-A               Keep the connection alive.\n"
+"                               Default is false.\n"
+"  --parallel=N|-p N            Parallel connections.\n"
+"                               Default is %d.\n"
+"  --url=URL|-u URL             URL to query. Required. Multiple.\n"
+"  --proxy=HOST[:PORT]|-P HOST[:PORT]\n"
+"                               Proxy host or IP address and optionally port\n"
+"                               (default to URL port) to connect to.\n"
+"                               No scheme prefix.\n"
+"  --pause=MSEC|-z MSEC         Pause before sending a URL batch.\n"
+"  --header=HEADER|-H HEADER    Send this header.  Multiple.\n"
         ,
         basename(p),
         MNHTEST_PARALLEL_DEFAULT
@@ -146,6 +178,7 @@ sigshutdown(UNUSED int argc, UNUSED void **argv)
         } else {
             ++sigshutdown_sent;
         }
+        shutting_down = true;
     } else {
         exit(0);
     }
@@ -163,7 +196,7 @@ myterm(UNUSED int sig)
 static int
 stats0(UNUSED int argc, UNUSED void **argv)
 {
-    while (mrkthr_sleep(2000) == 0) {
+    while (!shutting_down && mrkthr_sleep(2000) == 0) {
         CTRACE("nreq %ld nbytes %ld", nreq, nbytes);
         nreq = 0;
         nbytes = 0;
@@ -187,20 +220,49 @@ mybodycb(mnhttp_ctx_t *ctx,
 
 
 static int
+add_header_cb(mnhtestc_header_t *header, mnhttpc_request_t *req)
+{
+    if (header->key != NULL && header->value != NULL) {
+        (void)mnhttpc_request_out_field_addb(req, header->key, header->value);
+    }
+    return 0;
+}
+
+
+static int
 mycb2(mnbytes_t **s, UNUSED void *udata)
 {
-    int res;
+    int res = 0;
     mnhttpc_t *client = udata;
-    mnhttpc_request_t *req;
+    mnhttpc_request_t *req = NULL;
     int bsize, delay;
 
+    if (shutting_down) {
+        goto end;
+    }
     bsize = randombsize();
     delay = randomdelay();
     //CTRACE("url=%s bsize=%d delay=%d", BDATASAFE(*s), bsize, delay);
-    req = mnhttpc_get_new(client, *s, mybodycb);
+    if ((req = mnhttpc_get_new(client,
+                               proxy_host,
+                               proxy_port,
+                               *s,
+                               mybodycb)) == NULL) {
+        CTRACE("Failed to create a request %s with proxy %s:%s",
+               BDATASAFE(*s),
+               BDATASAFE(proxy_host),
+               BDATASAFE(proxy_port));
+        res = 1;
+        goto end;
+    }
     mnhttpc_request_out_qterm_addb(req, &_bsiz, bytes_printf("%d", bsize));
     mnhttpc_request_out_qterm_addb(req, &_dlay, bytes_printf("%d", delay));
     (void)mnhttpc_request_out_field_addb(req, &_connection, &_close);
+    (void)mnhttpc_request_out_field_addb(req, &_proxy_connection, &_close);
+    (void)array_traverse(&headers, (array_traverser_t)add_header_cb, req);
+    if (shutting_down) {
+        goto end;
+    }
     if ((res = mnhttpc_request_finalize(req)) != 0) {
         goto end;
     }
@@ -214,17 +276,35 @@ end:
 static int
 mycb1(mnbytes_t **s, void *udata)
 {
-    int res;
+    int res = 0;
     mnhttpc_t *client = udata;
-    mnhttpc_request_t *req;
+    mnhttpc_request_t *req = NULL;
     int bsize, delay;
 
+    if (shutting_down) {
+        goto end;
+    }
     bsize = randombsize();
     delay = randomdelay();
     //CTRACE("url=%s bsize=%d delay=%d", BDATASAFE(*s), bsize, delay);
-    req = mnhttpc_get_new(client, *s, mybodycb);
+    if ((req = mnhttpc_get_new(client,
+                               proxy_host,
+                               proxy_port,
+                               *s,
+                               mybodycb)) == NULL) {
+        CTRACE("Failed to create a request %s with proxy %s:%s",
+               BDATASAFE(*s),
+               BDATASAFE(proxy_host),
+               BDATASAFE(proxy_port));
+        res = 1;
+        goto end;
+    }
     mnhttpc_request_out_qterm_addb(req, &_bsiz, bytes_printf("%d", bsize));
     mnhttpc_request_out_qterm_addb(req, &_dlay, bytes_printf("%d", delay));
+    (void)array_traverse(&headers, (array_traverser_t)add_header_cb, req);
+    if (shutting_down) {
+        goto end;
+    }
     if ((res = mnhttpc_request_finalize(req)) != 0) {
         goto end;
     }
@@ -249,9 +329,14 @@ run1(UNUSED int argc, UNUSED void **argv)
     } else {
         cb = (array_traverser_t)mycb2;
     }
-    while (true) {
+    while (!shutting_down) {
         if (array_traverse(&urls, cb, &client) != 0) {
             break;
+        }
+        if (batch_pause > 0) {
+            if (mrkthr_sleep(batch_pause)) {
+                break;
+            }
         }
     }
     mnhttpc_fini(&client);
@@ -318,10 +403,40 @@ main(int argc, char **argv)
         FAIL("array_init");
     }
 
-    while ((ch = getopt_long(argc, argv, "Ahp:u:V", optinfo, &idx)) != -1) {
+    if (array_init(&headers,
+                   sizeof(mnhtestc_header_t),
+                   0,
+                   NULL,
+                   (array_finalizer_t)mnhtestc_header_item_fini) != 0) {
+        FAIL("array_init");
+    }
+
+    while ((ch = getopt_long(argc, argv, "AH:hP:p:u:Vz:", optinfo, &idx)) != -1) {
         switch (ch) {
         case 'A':
             keepalive = 1;
+            break;
+
+        case 'H':
+            {
+                char *p;
+
+                if ((p = strchr(optarg, ':')) != NULL) {
+                    mnhtestc_header_t *h;
+
+                    *p = '\0';
+                    ++p;
+
+                    if ((h = array_incr(&headers)) == NULL) {
+                        FAIL("array_incr");
+                    }
+
+                    h->key = bytes_new_from_str(optarg);
+                    BYTES_INCREF(h->key);
+                    h->value = bytes_new_from_str(p);
+                    BYTES_INCREF(h->value);
+                }
+            }
             break;
 
         case 'h':
@@ -331,6 +446,27 @@ main(int argc, char **argv)
         case 'p':
             parallel = strtol(optarg, NULL, 10);
             break;
+
+        case 'P':
+            {
+                char *p;
+
+                BYTES_DECREF(&proxy_host);
+                BYTES_DECREF(&proxy_port);
+                if ((p = strchr(optarg, ':')) != NULL) {
+                    *p = '\0';
+                    ++p;
+                    proxy_host = bytes_new_from_str(optarg);
+                    BYTES_INCREF(proxy_host);
+                    proxy_port = bytes_new_from_str(p);
+                    BYTES_INCREF(proxy_port);
+                } else {
+                    proxy_host = bytes_new_from_str(optarg);
+                    BYTES_INCREF(proxy_host);
+                }
+            }
+            break;
+
 
         case 'u':
             {
@@ -348,6 +484,7 @@ main(int argc, char **argv)
             exit(0);
 
         case 1:
+        case 'z':
             break;
 
         default:
@@ -359,6 +496,13 @@ main(int argc, char **argv)
     if (!INB0(MNHTEST_PARALLEL_MIN, parallel, MNHTEST_PARALLEL_MAX)) {
         parallel = MNHTEST_PARALLEL_DEFAULT;
     }
+
+    if (batch_pause < 0) {
+        CTRACE("--pause cannot be negative.");
+        usage(argv[0]);
+        exit(1);
+    }
+
     if (urls.elnum == 0) {
         CTRACE("URLs cannot be empty.");
         usage(argv[0]);

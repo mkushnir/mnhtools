@@ -1,6 +1,8 @@
 #!/bin/sh
 ulimit -c 2000
 
+host=vm-pear-103
+
 if test "$1" = "o"
 then
     ./mnhtesto -P9000 -C1024 2>&1 | tee out-o
@@ -8,18 +10,18 @@ then
 elif test "$1" = "c"
 then
     ./mnhtestc \
-        -u https://localhost:8443/ \
-        -u https://localhost:8443/qwe02 \
-        -u https://localhost:8443/qwe03 \
-        -u https://localhost:8443/qwe04 \
-        -u https://localhost:8443/qwe05 \
-        -u https://localhost:8443/qwe06 \
-        -u https://localhost:8443/qwe07 \
-        -u https://localhost:8443/qwe08 \
-        -u https://localhost:8443/qwe09 \
-        -u https://localhost:8443/qwe0a \
-        -u https://localhost:8443/qwe0b \
-        -p1000 2>&1 | tee out-c
+        -u https://$host:8443/ \
+        -u https://$host:8443/qwe02 \
+        -u https://$host:8443/qwe03 \
+        -u https://$host:8443/qwe04 \
+        -u https://$host:8443/qwe05 \
+        -u https://$host:8443/qwe06 \
+        -u https://$host:8443/qwe07 \
+        -u https://$host:8443/qwe08 \
+        -u https://$host:8443/qwe09 \
+        -u https://$host:8443/qwe0a \
+        -u https://$host:8443/qwe0b \
+        -p1000 -A 2>&1 | tee out-c
 
 else
     echo 'Invalid arguments'
