@@ -12,13 +12,13 @@ CLEANFILES = $(BUILT_SOURCES) *.core core
 #CLEANFILES += *.in
 AM_MAKEFLAGS = -s
 
-noinst_HEADERS = mnhtesto.h
+noinst_HEADERS = mnhtesto.h units.h
 
 bin_PROGRAMS = mnhtesto mnhtestc
 
 nobase_include_HEADERS =
 
-mnhtesto_SOURCES = mnhtesto.c mnhtesto-main.c
+mnhtesto_SOURCES = mnhtesto.c units.c mnhtesto-main.c
 nodist_mnhtesto_SOURCES = diag.c
 
 mnhtestc_SOURCES = mnhtestc.c mnhtestc-main.c
@@ -33,7 +33,7 @@ DEBUG_FLAGS = -DNDEBUG -O3 -fomit-frame-pointer
 endif
 
 mnhtesto_CFLAGS = $(DEBUG_FLAGS) -Wall -Wextra -Werror -std=c99 @_GNU_SOURCE_MACRO@ @_XOPEN_SOURCE_MACRO@ -I$(top_srcdir)/src -I$(top_srcdir) -I$(includedir)
-mnhtesto_LDFLAGS = -all-static -L$(libdir) -lmnfcgi -lmrkapp -lmrkthr -lmrkcommon
+mnhtesto_LDFLAGS = -all-static -L$(libdir) -lmnfcgi -lmrkapp -lmrkthr -lmrkcommon -lm
 
 mnhtestc_CFLAGS = $(DEBUG_FLAGS) -Wall -Wextra -Werror -std=c99 @_GNU_SOURCE_MACRO@ @_XOPEN_SOURCE_MACRO@ -I$(top_srcdir)/src -I$(top_srcdir) -I$(includedir)
 #mnhtestc_LDFLAGS = -all-static -L$(libdir) -lmrkapp -lmrkthr -lmrkcommon -lz -lssl -lcrypto

@@ -38,6 +38,8 @@ static mnbytes_t __qwea = BYTES_INITIALIZER("/qwe0a");
 static mnbytes_t __qweb = BYTES_INITIALIZER("/qwe0b");
 static mnbytes_t _ok = BYTES_INITIALIZER("OK");
 
+mnbytes_t _x_mnhtesto_quota = BYTES_INITIALIZER("x-mnhtesto-quota");
+
 
 #define BSIZE_MIN 10
 #define BSIZE_MAX 21
@@ -51,6 +53,8 @@ static char d[1<<(BSIZE_MAX + 1)];
 
 extern unsigned long nreq;
 extern unsigned long nbytes;
+
+static mnhash_t quotas;
 
 static ssize_t
 mnhtesto_body(mnfcgi_record_t *rec, mnbytestream_t *bs, void *udata)
@@ -229,4 +233,105 @@ mnhtesto_app_init(mnfcgi_app_t *app)
     }
 
     return 0;
+}
+
+
+int
+parse_quota(char *s)
+{
+    int res = 0;
+    char *p;
+    mnbytes_t *qname = NULL, *denom = NULL, *divisor = NULL;
+    mnhtesto_quota_t *quota;
+    mnhash_item_t *hit;
+
+    if ((p = strchr(s, ':')) == NULL) {
+        goto err;
+    }
+    *p = '\0';
+    qname = bytes_new_from_str(s);
+
+    s = ++p;
+    if ((p = strchr(s, '/')) == NULL) {
+        goto err;
+    }
+    *p = '\0';
+    denom = bytes_new_from_str(s);
+
+    s = ++p;
+    divisor = bytes_new_from_str(s);
+
+    if ((quota = malloc(sizeof(mnhtesto_quota_t))) == NULL) {
+        FAIL("malloc");
+    }
+
+    if (mnhtest_unit_parse(&quota->denom_unit,
+                           denom,
+                           &quota->denom) == NULL) {
+        goto err;
+    }
+
+    if (mnhtest_unit_parse(&quota->divisor_unit,
+                           divisor,
+                           &quota->divisor) == NULL) {
+        goto err;
+    }
+
+    if ((hit = hash_get_item(&quotas, qname)) != NULL) {
+        /*
+         * duplicate quota
+         */
+        goto err;
+    }
+
+    BYTES_INCREF(qname);
+    hash_set_item(&quotas, qname, quota);
+
+end:
+    BYTES_DECREF(&denom);
+    BYTES_DECREF(&divisor);
+    TRRET(res);
+
+err:
+    BYTES_DECREF(&qname);
+    res = PARSE_QUOTA + 1;
+    goto end;
+}
+
+
+static void
+mnhtesto_quota_destroy(mnhtesto_quota_t **quota)
+{
+    if (*quota != NULL) {
+        free(*quota);
+        *quota = NULL;
+    }
+}
+
+
+static int
+quota_item_finalizer(mnbytes_t *key, mnhtesto_quota_t *quota)
+{
+    BYTES_DECREF(&key);
+    mnhtesto_quota_destroy(&quota);
+    return 0;
+}
+
+
+void
+mnhtesto_init(void)
+{
+    hash_init(&quotas,
+              17,
+              (hash_hashfn_t)bytes_hash,
+              (hash_item_comparator_t)bytes_cmp,
+              (hash_item_finalizer_t)quota_item_finalizer);
+
+}
+
+
+void
+mnhtesto_fini(void)
+{
+    hash_fini(&quotas);
 }

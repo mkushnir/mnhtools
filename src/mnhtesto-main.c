@@ -55,6 +55,8 @@ static struct option optinfo[] = {
     {"max-conn", required_argument, NULL, 'C'},
 #define MNHTESTO_MAX_REQ     6
     {"max-req", required_argument, NULL, 'R'},
+#define MNHTESTO_QUOTA       7
+    {"quota", required_argument, NULL, 'Q'},
 
     {NULL, 0, NULL, 0},
 };
@@ -96,6 +98,7 @@ initall(void)
 static void
 finiall(void)
 {
+    mnhtesto_fini();
     assert(host != NULL);
     free(host);
     host = NULL;
@@ -121,11 +124,15 @@ usage(char *p)
         "                               Default %d.\n"
         "  --max-req|-R                 Max concurrent requests.\n"
         "                               Default %d.\n"
+        "  --quota|-Q                   Apply this quota. Multiple.\n"
+        "                               Quota selector is %s:\n"
+        "                               HTTP header\n"
         ,
         basename(p),
         MNHTESTO_DEFAULT_HOST,
         MNHTESTO_DEFAULT_MAX_CONN,
-        MNHTESTO_DEFAULT_MAX_REQ);
+        MNHTESTO_DEFAULT_MAX_REQ,
+        BDATA(&_x_mnhtesto_quota));
 }
 
 
@@ -252,8 +259,13 @@ main(int argc, char **argv)
     }
 #endif
 
+    mnhtesto_init();
 
-    while ((ch = getopt_long(argc, argv, "C:hH:P:R:V", optinfo, &idx)) != -1) {
+    while ((ch = getopt_long(argc,
+                             argv,
+                             "C:hH:P:Q:R:V",
+                             optinfo,
+                             &idx)) != -1) {
         switch (ch) {
         case 'C':
             max_conn = strtol(optarg, NULL, 10);
@@ -269,6 +281,13 @@ main(int argc, char **argv)
 
         case 'P':
             port = strdup(optarg);
+            break;
+
+        case 'Q':
+            if (parse_quota(optarg) != 0) {
+                usage(argv[0]);
+                exit(1);
+            }
             break;
 
         case 'R':

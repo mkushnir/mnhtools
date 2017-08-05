@@ -22,4 +22,6 @@ then
         -p1000 2>&1 | tee out-c
 
 else
+    echo 'Invalid arguments'
+    exit 1
 fi
