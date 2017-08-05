@@ -8,8 +8,8 @@ then
     ./mnhtesto                 \
         -Q qwe:1kb/5sec        \
         -Q asd:1mb/5sec        \
-        -Q zxc:150rec/15sec    \
-        -Q xcv:1rec/5sec       \
+        -Q zxc:150req/15sec    \
+        -Q xcv:1req/5sec       \
         -P 9000 -C 1024 2>&1 | tee out-o
 
 elif test "$1" = "c"
