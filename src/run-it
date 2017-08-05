@@ -5,25 +5,32 @@ host=vm-pear-103
 
 if test "$1" = "o"
 then
-    ./mnhtesto -P9000 -C1024 2>&1 | tee out-o
+    ./mnhtesto                 \
+        -Q qwe:1kb/5sec        \
+        -Q asd:1mb/5sec        \
+        -Q zxc:150rec/15sec    \
+        -Q xcv:1rec/5sec       \
+        -P 9000 -C 1024 2>&1 | tee out-o
 
 elif test "$1" = "c"
 then
-    ./mnhtestc \
-        -u https://$host:8443/ \
-        -u https://$host:8443/qwe02 \
-        -u https://$host:8443/qwe03 \
-        -u https://$host:8443/qwe04 \
-        -u https://$host:8443/qwe05 \
-        -u https://$host:8443/qwe06 \
-        -u https://$host:8443/qwe07 \
-        -u https://$host:8443/qwe08 \
-        -u https://$host:8443/qwe09 \
-        -u https://$host:8443/qwe0a \
-        -u https://$host:8443/qwe0b \
-        -Q qwe:1kb/5sec \
-        -Q asd:1mb/5sec \
-        -p1000 -A 2>&1 | tee out-c
+    ./mnhtestc                         \
+        -u https://$host:8443/         \
+        -u https://$host:8443/qwe02    \
+        -u https://$host:8443/qwe03    \
+        -u https://$host:8443/qwe04    \
+        -u https://$host:8443/qwe05    \
+        -u https://$host:8443/qwe06    \
+        -u https://$host:8443/qwe07    \
+        -u https://$host:8443/qwe08    \
+        -u https://$host:8443/qwe09    \
+        -u https://$host:8443/qwe0a    \
+        -u https://$host:8443/qwe0b    \
+        -p 1000 -A 2>&1 | tee out-c
+
+elif test "$1" = "c1"
+then
+    ./mnhtestc -u https://$host:8443/ -Q xcv -z 1000
 
 else
     echo 'Invalid arguments'

@@ -41,6 +41,7 @@ static mnbytes_t _close = BYTES_INITIALIZER("close");
 static mnbytes_t _x_mnhtesto_quota = BYTES_INITIALIZER("x-mnhtesto-quota");
 
 static int develop = 0;
+static int print_config = 0;
 static int keepalive = 0;
 #define MNHTEST_PARALLEL_MIN 1
 #define MNHTEST_PARALLEL_MAX 1000
@@ -76,29 +77,31 @@ static unsigned long nbytes;
 
 
 static struct option optinfo[] = {
-#define MNHTESTC_OPT_HELP       0
+#define MNHTESTC_OPT_HELP           0
     {"help", no_argument, NULL, 'h'},
-#define MNHTESTC_OPT_VERSION    1
+#define MNHTESTC_OPT_VERSION        1
     {"version", no_argument, NULL, 'V'},
-#define MNHTESTC_OPT_DEVELOP    2
+#define MNHTESTC_OPT_DEVELOP        2
     {"develop", no_argument, &develop, 1},
-#define MNHTESTC_OPT_KEEPALIVE  3
+#define MNHTESTC_OPT_PRINTCONFIG    3
+    {"print-config", no_argument, &print_config, 1},
+#define MNHTESTC_OPT_KEEPALIVE      4
     {"keepalive", no_argument, &keepalive, 'A'},
-#define MNHTESTC_OPT_PARALLEL   4
+#define MNHTESTC_OPT_PARALLEL       5
     {"parallel", required_argument, &parallel, 'p'},
-#define MNHTESTC_OPT_URL        5
+#define MNHTESTC_OPT_URL            6
     {"url", required_argument, NULL, 'u'},
-#define MNHTESTC_OPT_PROXY      6
+#define MNHTESTC_OPT_PROXY          7
     {"proxy", required_argument, NULL, 'P'},
-#define MNHTESTC_OPT_PAUSE      7
-    {"pause", required_argument, &batch_pause, 'z'},
-#define MNHTESTC_OPT_HEADER     8
+#define MNHTESTC_OPT_PAUSE          8
+    {"pause", required_argument, NULL, 'z'},
+#define MNHTESTC_OPT_HEADER         9
     {"header", required_argument, NULL, 'H'},
-#define MNHTESTC_OPT_DELAY      9
+#define MNHTESTC_OPT_DELAY          10
     {"delay", required_argument, NULL, 'D'},
-#define MNHTESTC_OPT_BSIZE      10
+#define MNHTESTC_OPT_BSIZE          11
     {"bsize", required_argument, NULL, 'B'},
-#define MNHTESTC_OPT_QUOTA      11
+#define MNHTESTC_OPT_QUOTA          12
     {"quota", required_argument, NULL, 'Q'},
 
     {NULL, 0, NULL, 0},
@@ -173,6 +176,7 @@ usage(char *p)
 "  --help|-h                    Show this message and exit.\n"
 "  --version|-V                 Print version and exit.\n"
 "  --develop                    Run in develop mode.\n"
+"  --print-config               Print configuration.\n"
 "  --keepalive|-A               Keep the connection alive.\n"
 "                               Default is false.\n"
 "  --parallel=N|-p N            Parallel connections.\n"
@@ -274,6 +278,7 @@ mycb2(mnbytes_t **s, UNUSED void *udata)
     mnhttpc_t *client = udata;
     mnhttpc_request_t *req = NULL;
     int bsize = -1, delay = -1;
+    mnbytes_t *quota;
 
     if (shutting_down) {
         goto end;
@@ -297,6 +302,9 @@ mycb2(mnbytes_t **s, UNUSED void *udata)
     if (use_delay) {
         delay = randomdelay();
         mnhttpc_request_out_qterm_addb(req, &_dlay, bytes_printf("%d", delay));
+    }
+    if ((quota = randomquota()) != NULL) {
+        mnhttpc_request_out_field_addb(req, &_x_mnhtesto_quota, quota);
     }
     //CTRACE("url=%s bsize=%d delay=%d", BDATASAFE(*s), bsize, delay);
     (void)mnhttpc_request_out_field_addb(req, &_connection, &_close);
@@ -404,6 +412,28 @@ run0(UNUSED int argc, UNUSED void **argv)
     }
     MRKTHR_SPAWN("stats0", stats0);
     return 0;
+}
+
+
+static int
+print_config_urls(mnbytes_t **url, mnbytestream_t *bs)
+{
+    return bytestream_nprintf(bs, 1024, " -u %s", BDATA(*url)) <= 0;
+}
+
+
+static int
+print_config_quotas(mnbytes_t **quota, mnbytestream_t *bs)
+{
+    return bytestream_nprintf(bs, 1024, " -Q %s", BDATA(*quota)) <= 0;
+}
+
+
+static int
+print_config_headers(mnhtestc_header_t *header, mnbytestream_t *bs)
+{
+    return bytestream_nprintf(bs, 1024, " -H %s:%s",
+            BDATA(header->key), BDATA(header->value)) <= 0;
 }
 
 
@@ -559,8 +589,11 @@ main(int argc, char **argv)
             printf("%s\n", VERSION);
             exit(0);
 
-        case 1:
         case 'z':
+            batch_pause = strtol(optarg, NULL, 10);
+            break;
+
+        case 0:
             break;
 
         default:
@@ -583,6 +616,54 @@ main(int argc, char **argv)
         CTRACE("URLs cannot be empty.");
         usage(argv[0]);
         exit(1);
+    }
+
+    if (print_config) {
+        mnbytestream_t bs;
+
+        bytestream_init(&bs, 1024);
+
+        if (develop) {
+            bytestream_nprintf(&bs, 1024, " -d");
+        }
+
+        if (keepalive) {
+            bytestream_nprintf(&bs, 1024, " -A");
+        }
+
+        if (parallel != MNHTEST_PARALLEL_DEFAULT) {
+            bytestream_nprintf(&bs, 1024, " -p %d", parallel);
+        }
+
+        array_traverse(&urls, (array_traverser_t)print_config_urls, &bs);
+
+        if (proxy_host != NULL) {
+            bytestream_nprintf(&bs, 1024, " -P %s", BDATA(proxy_host));
+        }
+
+        if (proxy_port != NULL) {
+            bytestream_nprintf(&bs, 1024, ":%s", BDATA(proxy_port));
+        }
+
+        if (batch_pause > 0) {
+            bytestream_nprintf(&bs, 1024, " -z %d", batch_pause);
+        }
+
+        array_traverse(&headers,
+                       (array_traverser_t)print_config_headers, &bs);
+
+        if (use_delay) {
+            bytestream_nprintf(&bs, 1024, " -D");
+        }
+
+        if (use_bsize) {
+            bytestream_nprintf(&bs, 1024, " -B");
+        }
+
+        array_traverse(&quotas,
+                       (array_traverser_t)print_config_quotas, &bs);
+        printf("%s %s\n", basename(argv[0]), SPDATA(&bs));
+        exit(0);
     }
 
     argc -= optind;
