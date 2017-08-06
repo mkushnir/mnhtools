@@ -53,10 +53,21 @@ mnbytes_t _http_x_mnhtesto_quota = BYTES_INITIALIZER("HTTP_X_MNHTESTO_QUOTA");
 
 static char d[1<<(BSIZE_MAX + 1)];
 
-extern unsigned long nreq;
-extern unsigned long nbytes;
+unsigned long nreq[600];
+unsigned long nbytes[600];
 
 static mnhash_t quotas;
+
+
+static void
+update_stats(UNUSED mnfcgi_request_t *req, int code, int amount)
+{
+    if ((unsigned)code < countof(nreq)) {
+        ++nreq[code];
+        nbytes[code] += amount;
+    }
+}
+
 
 static ssize_t
 mnhtesto_body(mnfcgi_record_t *rec, mnbytestream_t *bs, void *udata)
@@ -87,6 +98,7 @@ quota_init(mnhtesto_quota_t *quota, uint64_t now)
     quota->ts -= quota->ts % (unsigned)MNHTESTO_QUOTA_UNITS(quota);
     quota->value = 0.0;
     quota->prorated = 0.0;
+    quota->poena_factor = 1.0;
 }
 
 
@@ -144,8 +156,12 @@ mnhtesto_update_quota(mnfcgi_request_t *req, int amount)
                 }
 
             } else {
+                double normvalue;
+
+                normvalue = quota->poena_factor * quota->value;
+
                 quota->prorated = MNHTESTO_QUOTA_PRORATE(
-                    quota, quota->value + (double)amount, now);
+                    quota, normvalue + (double)amount, now);
 
                 if (quota->prorated <= MNHTESTO_QUOTA_LIMIT(quota)) {
                     /*
@@ -161,7 +177,7 @@ mnhtesto_update_quota(mnfcgi_request_t *req, int amount)
                     /*
                      * previous quota overuse, 429
                      */
-                    quota->value += (double)amount;
+                    quota->value = normvalue + (double)amount;
                     res = -1;
 
                     xtot = mnhtest_unit_str(&quota->spec.denom_unit,
@@ -194,7 +210,7 @@ mnhtesto_update_quota(mnfcgi_request_t *req, int amount)
             }
         }
     } else {
-        CTRACE("no quota");
+        //CTRACE("no quota");
     }
 
     return res;
@@ -249,12 +265,12 @@ mnhtesto_root_get(mnfcgi_request_t *req, RESERVED void *__udata)
 
     params.tts = (int)(1 << params.delay);
 
-    ++nreq;
-
     if (mnhtesto_update_quota(req, params.clen) != 0) {
         mnfcgi_app_error(req, 429, &_too_much);
+        update_stats(req, 429, 0);
         goto end;
     }
+
 
     if (MRKUNLIKELY((res = mnfcgi_request_status_set(req, 200, &_ok)) != 0)) {
         goto end;
@@ -290,7 +306,8 @@ mnhtesto_root_get(mnfcgi_request_t *req, RESERVED void *__udata)
             break;
         }
     }
-    nbytes += params.clen;
+    update_stats(req, 200, params.clen);
+
 
 end:
     return res;

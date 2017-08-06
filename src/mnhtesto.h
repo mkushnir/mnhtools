@@ -31,6 +31,7 @@ typedef struct _mnhtesto_quota {
     uint64_t ts;
     double value;
     double prorated;
+    double poena_factor;
 } mnhtesto_quota_t;
 
 

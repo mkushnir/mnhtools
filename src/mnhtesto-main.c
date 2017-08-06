@@ -36,8 +36,8 @@ static int max_conn;
 #define MNHTESTO_DEFAULT_MAX_REQ 1
 static int max_req;
 
-unsigned long nreq;
-unsigned long nbytes;
+extern unsigned long nreq[600];
+extern unsigned long nbytes[600];
 
 
 static struct option optinfo[] = {
@@ -172,16 +172,32 @@ myterm(UNUSED int sig)
 }
 
 
+static void
+print_stats(void)
+{
+    mnfcgi_stats_t *stats;
+    unsigned i;
+
+    stats = mnfcgi_app_get_stats(fcgi_app);
+
+    TRACEC("nthreads %d", stats->nthreads);
+
+    for (i = 0; i < countof(nreq); ++i) {
+        if (nreq[i] > 0) {
+            TRACEC(" % 3d: % 6ld % 9ld", i, nreq[i], nbytes[i]);
+            nreq[i] = 0;
+            nbytes[i] = 0;
+        }
+    }
+    TRACEC("\n");
+}
+
+
 static int
 stats0(UNUSED int argc, UNUSED void **argv)
 {
     while (mrkthr_sleep(2000) == 0) {
-        mnfcgi_stats_t *stats;
-
-        stats = mnfcgi_app_get_stats(fcgi_app);
-        CTRACE("nthreads %d nreq %ld nbytes %ld", stats->nthreads, nreq, nbytes);
-        nreq = 0;
-        nbytes = 0;
+        print_stats();
     }
     return 0;
 }
