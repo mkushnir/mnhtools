@@ -1,5 +1,6 @@
 #include <err.h>
 #include <getopt.h>
+#include <inttypes.h>
 #include <libgen.h>
 #include <signal.h>
 #include <stddef.h>
@@ -39,6 +40,7 @@ static mnbytes_t _connection = BYTES_INITIALIZER("Connection");
 static mnbytes_t _proxy_connection = BYTES_INITIALIZER("Proxy-Connection");
 static mnbytes_t _close = BYTES_INITIALIZER("close");
 static mnbytes_t _x_mnhtesto_quota = BYTES_INITIALIZER("x-mnhtesto-quota");
+static mnbytes_t _retry_after = BYTES_INITIALIZER("retry-after");
 
 static int develop = 0;
 static int print_config = 0;
@@ -71,9 +73,10 @@ static mnarray_t headers;
 static mnarray_t quotas;
 static mnbytes_t *proxy_host;
 static mnbytes_t *proxy_port;
+static mnbytes_t *quota_selector;
 
-static unsigned long nreq;
-static unsigned long nbytes;
+static unsigned long nreq[600];
+static unsigned long nbytes[600];
 
 
 static struct option optinfo[] = {
@@ -103,6 +106,8 @@ static struct option optinfo[] = {
     {"bsize", required_argument, NULL, 'B'},
 #define MNHTESTC_OPT_QUOTA          12
     {"quota", required_argument, NULL, 'Q'},
+#define MNHTESTC_OPT_QUOTA_SELECTOR 13
+    {"quota-selector", required_argument, NULL, 'S'},
 
     {NULL, 0, NULL, 0},
 };
@@ -188,6 +193,9 @@ usage(char *p)
 "                               No scheme prefix.\n"
 "  --pause=MSEC|-z MSEC         Pause before sending a URL batch.\n"
 "  --header=HEADER|-H HEADER    Send this header.  Multiple.\n"
+"  --quota=QUOTA|-Q QUOTA       Use thie quota.  Multiple.\n"
+"  --quota-selector=NAME|-S NAME\n"
+"                               Copy quota in this header.\n"
         ,
         basename(p),
         MNHTEST_PARALLEL_DEFAULT
@@ -239,25 +247,89 @@ static int
 stats0(UNUSED int argc, UNUSED void **argv)
 {
     while (!shutting_down && mrkthr_sleep(2000) == 0) {
-        CTRACE("nreq %ld nbytes %ld", nreq, nbytes);
-        nreq = 0;
-        nbytes = 0;
+        unsigned i;
+
+        for (i = 0; i < countof(nreq); ++i) {
+            if (nreq[i] > 0) {
+                TRACEC(" % 3d: % 6ld % 9ld", i, nreq[i], nbytes[i]);
+                nreq[i] = 0;
+                nbytes[i] = 0;
+            }
+        }
+        TRACEC("\n");
+
     }
     return 0;
+}
+
+
+uint64_t
+parse_retry_after(mnbytes_t *s)
+{
+    struct tm t;
+    time_t tt;
+    long seconds;
+
+    assert(s != NULL);
+
+    if (strptime((char *)BDATA(s), "%a, %d %b %Y %H:%M:%S %Z", &t) != NULL) {
+        tt = mktime(&t);
+
+    } else if ((seconds = strtol((char *)BDATA(s), NULL, 10)) != 0) {
+        tt = MRKTHR_GET_NOW_SEC() + seconds;
+
+    } else {
+        tt = MRKTHR_GET_NOW_SEC();
+    }
+
+    return (uint64_t)tt;
 }
 
 
 static int
 mybodycb(mnhttp_ctx_t *ctx,
          UNUSED mnbytestream_t *bs,
-         UNUSED mnhttpc_request_t *req)
+         mnhttpc_request_t *req)
 {
+    int res = 0;
+    uint64_t tts = 0;
+
     if (mnhttp_ctx_last_chunk(ctx)) {
-        ++nreq;
-        nbytes += ctx->bodysz;
+        if (req->response.in.ctx.code.status == 429 || req->response.in.ctx.code.status == 503) {
+            mnhash_item_t *hit;
+            if ((hit = hash_get_item(&req->response.in.headers, &_retry_after)) != NULL) {
+                mnbytes_t *v;
+                uint64_t waketime, now;
+
+                v = hit->value;
+                //CTRACE("status=%d retry after %s", req->response.in.ctx.code.status, BDATASAFE(v));
+
+                now = MRKTHR_GET_NOW_SEC();
+                if ((waketime = parse_retry_after(v)) > now) {
+                    tts = waketime - now;
+                }
+
+            } else {
+                //CTRACE("status=%d", req->response.in.ctx.code.status);
+            }
+
+        } else {
+            //CTRACE("status=%d", req->response.in.ctx.code.status);
+        }
+
         //CTRACE("received %d bytes of body", ctx->bodysz);
+        if ((unsigned)req->response.in.ctx.code.status < countof(nreq)) {
+            ++nreq[req->response.in.ctx.code.status];
+            nbytes[req->response.in.ctx.code.status] += ctx->bodysz;
+        }
+
+        if (tts > 0) {
+            //CTRACE("sleeping for %"PRId64" seconds", tts);
+            res = mrkthr_sleep(tts * 1000);
+        }
     }
-    return 0;
+
+    return res;
 }
 
 
@@ -283,6 +355,7 @@ mycb2(mnbytes_t **s, UNUSED void *udata)
     if (shutting_down) {
         goto end;
     }
+
     if ((req = mnhttpc_get_new(client,
                                proxy_host,
                                proxy_port,
@@ -295,24 +368,33 @@ mycb2(mnbytes_t **s, UNUSED void *udata)
         res = 1;
         goto end;
     }
+
     if (use_bsize) {
         bsize = randombsize();
         mnhttpc_request_out_qterm_addb(req, &_bsiz, bytes_printf("%d", bsize));
     }
+
     if (use_delay) {
         delay = randomdelay();
         mnhttpc_request_out_qterm_addb(req, &_dlay, bytes_printf("%d", delay));
     }
+
     if ((quota = randomquota()) != NULL) {
         mnhttpc_request_out_field_addb(req, &_x_mnhtesto_quota, quota);
+        if (quota_selector != NULL) {
+            mnhttpc_request_out_field_addb(req, quota_selector, quota);
+        }
     }
+
     //CTRACE("url=%s bsize=%d delay=%d", BDATASAFE(*s), bsize, delay);
     (void)mnhttpc_request_out_field_addb(req, &_connection, &_close);
     (void)mnhttpc_request_out_field_addb(req, &_proxy_connection, &_close);
     (void)array_traverse(&headers, (array_traverser_t)add_header_cb, req);
+
     if (shutting_down) {
         goto end;
     }
+
     if ((res = mnhttpc_request_finalize(req)) != 0) {
         goto end;
     }
@@ -335,6 +417,7 @@ mycb1(mnbytes_t **s, void *udata)
     if (shutting_down) {
         goto end;
     }
+
     if ((req = mnhttpc_get_new(client,
                                proxy_host,
                                proxy_port,
@@ -347,22 +430,27 @@ mycb1(mnbytes_t **s, void *udata)
         res = 1;
         goto end;
     }
+
     if (use_bsize) {
         bsize = randombsize();
         mnhttpc_request_out_qterm_addb(req, &_bsiz, bytes_printf("%d", bsize));
     }
+
     if (use_delay) {
         delay = randomdelay();
         mnhttpc_request_out_qterm_addb(req, &_dlay, bytes_printf("%d", delay));
     }
+
     if ((quota = randomquota()) != NULL) {
         mnhttpc_request_out_field_addb(req, &_x_mnhtesto_quota, quota);
     }
+
     //CTRACE("url=%s bsize=%d delay=%d", BDATASAFE(*s), bsize, delay);
     (void)array_traverse(&headers, (array_traverser_t)add_header_cb, req);
     if (shutting_down) {
         goto end;
     }
+
     if ((res = mnhttpc_request_finalize(req)) != 0) {
         goto end;
     }
@@ -499,7 +587,7 @@ main(int argc, char **argv)
         FAIL("array_init");
     }
 
-    while ((ch = getopt_long(argc, argv, "AB:D:H:hP:p:Q:u:Vz:", optinfo, &idx)) != -1) {
+    while ((ch = getopt_long(argc, argv, "AB:D:H:hP:p:Q:S:u:Vz:", optinfo, &idx)) != -1) {
         switch (ch) {
         case 'A':
             keepalive = 1;
@@ -572,6 +660,12 @@ main(int argc, char **argv)
                 *quota = bytes_new_from_str(optarg);
                 BYTES_INCREF(*quota);
             }
+            break;
+
+        case 'S':
+            BYTES_DECREF(&quota_selector);
+            quota_selector = bytes_new_from_str(optarg);
+            BYTES_INCREF(quota_selector);
             break;
 
         case 'u':
@@ -659,6 +753,11 @@ main(int argc, char **argv)
         if (use_bsize) {
             bytestream_nprintf(&bs, 1024, " -B");
         }
+
+        if (quota_selector != NULL) {
+            bytestream_nprintf(&bs, 1024, " -S %s", BDATA(quota_selector));
+        }
+
 
         array_traverse(&quotas,
                        (array_traverser_t)print_config_quotas, &bs);
