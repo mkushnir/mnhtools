@@ -2,6 +2,10 @@
 ulimit -c 2000
 
 host=vm-pear-103
+proxy=localhost
+delay=4500
+parallel=1
+quota=xcv
 
 if test "$1" = "o"
 then
@@ -26,11 +30,15 @@ then
         -u https://$host:8443/qwe09    \
         -u https://$host:8443/qwe0a    \
         -u https://$host:8443/qwe0b    \
-        -p 1000 -A 2>&1 | tee out-c
+        -p $parallel -A 2>&1 | tee out-c
 
 elif test "$1" = "c1"
 then
-    ./mnhtestc -u https://$host:8443/ -Q xcv -z 1000
+    ./mnhtestc -u https://$host:8443/ -Q $quota -z $delay
+
+elif test "$1" = "c2"
+then
+    ./mnhtestc -P $proxy -u https://$host:8443/ -Q $quota -S X-CL-RL -z $delay
 
 else
     echo 'Invalid arguments'

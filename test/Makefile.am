@@ -13,8 +13,8 @@ noinst_HEADERS = unittest.h
 
 noinst_PROGRAMS=testfoo gendata
 
-BUILT_SOURCES = diag.c diag.h gen-diag
-EXTRA_DIST = $(diags) gen-diag runscripts
+BUILT_SOURCES = diag.c diag.h
+EXTRA_DIST = $(diags) runscripts
 
 #noinst_HEADERS =
 
@@ -29,17 +29,17 @@ endif
 nodist_testfoo_SOURCES = diag.c
 testfoo_SOURCES = testfoo.c
 testfoo_CFLAGS = $(DEBUG_FLAGS) -Wall -Wextra -Werror -std=c99 @_GNU_SOURCE_MACRO@ @_XOPEN_SOURCE_MACRO@ -I$(top_srcdir)/test -I$(top_srcdir)/src -I$(top_srcdir) -I$(includedir)
-#testfoo_LDFLAGS =  -L$(libdir) -lmrkcommon
+#testfoo_LDFLAGS =  -L$(libdir) -lmrkcommon -lmndiag
 testfoo_LDFLAGS = 
 
 nodist_gendata_SOURCES = diag.c
 gendata_SOURCES = gendata.c
 gendata_CFLAGS = $(DEBUG_FLAGS) -Wall -Wextra -Werror -std=c99 @_GNU_SOURCE_MACRO@ @_XOPEN_SOURCE_MACRO@ -I$(top_srcdir)/test -I$(top_srcdir)/src -I$(top_srcdir) -I$(includedir)
-gendata_LDFLAGS =  -L$(libdir) -lmrkcommon
+gendata_LDFLAGS =  -L$(libdir) -lmrkcommon -lmndiag
 #gendata_LDFLAGS = 
 
-diag.c diag.h: $(diags) gen-diag
-	$(AM_V_GEN) cat $(diags) | sort -u | ./gen-diag mnhtools ../src
+diag.c diag.h: $(diags)
+	$(AM_V_GEN) cat $(diags) | sort -u >diag.txt.tmp && mndiagen -S diag.txt.tmp -L mnhtools -H diag.h -C diag.c ../*.[ch] ./*.[ch]
 
 testfoo-run: testfoo
 	@if test -x $>; \
