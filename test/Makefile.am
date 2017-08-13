@@ -30,7 +30,7 @@ nodist_testfoo_SOURCES = diag.c
 testfoo_SOURCES = testfoo.c
 testfoo_CFLAGS = $(DEBUG_FLAGS) -Wall -Wextra -Werror -std=c99 @_GNU_SOURCE_MACRO@ @_XOPEN_SOURCE_MACRO@ -I$(top_srcdir)/test -I$(top_srcdir)/src -I$(top_srcdir) -I$(includedir)
 #testfoo_LDFLAGS =  -L$(libdir) -lmrkcommon -lmndiag
-testfoo_LDFLAGS = 
+testfoo_LDFLAGS = -L$(libdir) -lmndiag
 
 nodist_gendata_SOURCES = diag.c
 gendata_SOURCES = gendata.c
