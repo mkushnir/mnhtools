@@ -40,7 +40,7 @@ mnhtestc_CFLAGS = $(DEBUG_FLAGS) -Wall -Wextra -Werror -std=c99 @_GNU_SOURCE_MAC
 mnhtestc_LDFLAGS = -L$(libdir) -lmrkapp -lmrkthr -lmrkcommon -lmndiag -lz -lssl -lcrypto
 
 diag.c diag.h: $(diags)
-	$(AM_V_GEN) cat $(diags) | sort -u >diag.txt.tmp && mndiagen -S diag.txt.tmp -L mnhtools -H diag.h -C diag.c *.[ch]
+	$(AM_V_GEN) cat $(diags) | sort -u >diag.txt.tmp && mndiagen -v -S diag.txt.tmp -L mnhtools -H diag.h -C diag.c *.[ch]
 
 run: all
 	for i in $(bin_PROGRAMS); do if test -x ./$$i; then LD_LIBRARY_PATH=$(libdir) ./$$i; fi; done;

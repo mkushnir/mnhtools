@@ -2,6 +2,7 @@
 ulimit -c 2000
 
 host=vm-pear-103
+host=mndo-01.mooo.com
 proxy=localhost
 delay=4500
 parallel=1
