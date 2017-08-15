@@ -10,19 +10,26 @@ extern "C" {
 
 /*
  * quota specification syntax:
- *  quota   ::= qname ":" denom "/" divisor
- *  qname   ::= ALNUM
- *  denom   ::= num [s-unit]
- *  divisor ::= num [t-unit]
- *  s-unit  ::= (s-mult "Bytes") / "Requests"
- *  s-mult  ::= "K" / "M" / "G"
- *  t-unit  ::= "sec" / "min" / "hour" / "day"
+ *  quota           ::= qname ":" denom "/" divisor
+ *                      [":" poena-factor [":" flags]]
+ *  qname           ::= ALNUM
+ *  denom           ::= num [s-unit]
+ *  divisor         ::= num [t-unit]
+ *  s-unit          ::= (s-mult "Bytes") / "Requests"
+ *  s-mult          ::= "K" / "M" / "G"
+ *  t-unit          ::= "sec" / "min" / "hour" / "day"
+ *  poena-factor    ::= FLOATNUM ;; typically [0.0, 1.0], default 1.0
+ *  flags           ::= any combination of:
+ *                      - "h" send the retry-after: header
  */
 typedef struct _mnhtesto_quota_spec {
     double denom;
     mnhtest_unit_t denom_unit;
     double divisor;
     mnhtest_unit_t divisor_unit;
+    double poena_factor;
+#define MNHTESTO_QF_SENDRA (0x01)
+    unsigned flags;
 } mnhtesto_quota_spec_t;
 
 
@@ -31,7 +38,6 @@ typedef struct _mnhtesto_quota {
     uint64_t ts;
     double value;
     double prorated;
-    double poena_factor;
 } mnhtesto_quota_t;
 
 

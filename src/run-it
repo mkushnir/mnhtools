@@ -10,11 +10,13 @@ quota=xcv
 
 if test "$1" = "o"
 then
-    ./mnhtesto                 \
-        -Q qwe:1kb/5sec        \
-        -Q asd:1mb/5sec        \
-        -Q zxc:150req/15sec    \
-        -Q xcv:1req/5sec       \
+    ./mnhtesto                         \
+        -Q qwe:1kb/5sec                \
+        -Q asd:1mb/5sec                \
+        -Q zxc:150req/15sec            \
+        -Q xcv00:80req/5sec            \
+        -Q xcv01:80req/5sec:1:h        \
+        -Q cvb00:80req/5sec:0.5:h      \
         -P 9000 -C 1024 2>&1 | tee out-o
 
 elif test "$1" = "c"

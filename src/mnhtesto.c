@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <inttypes.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -23,6 +24,7 @@ static mnbytes_t _private = BYTES_INITIALIZER("private");
 static mnbytes_t _pragma = BYTES_INITIALIZER("Pragma");
 static mnbytes_t _no_cache = BYTES_INITIALIZER("no-cache");
 static mnbytes_t _content_length = BYTES_INITIALIZER("Content-Length");
+static mnbytes_t _retry_after = BYTES_INITIALIZER("Retry-After");
 static mnbytes_t __root = BYTES_INITIALIZER("/");
 static mnbytes_t __qwe0 = BYTES_INITIALIZER("/qwe(0)=привіт");
 static mnbytes_t __qwe1 = BYTES_INITIALIZER("/qwe 1");
@@ -43,12 +45,14 @@ mnbytes_t _x_mnhtesto_quota = BYTES_INITIALIZER("x-mnhtesto-quota");
 mnbytes_t _http_x_mnhtesto_quota = BYTES_INITIALIZER("HTTP_X_MNHTESTO_QUOTA");
 
 
-#define BSIZE_MIN 10
-#define BSIZE_MAX 21
+#define BSIZE_MIN  10
+#define BSIZE_MAX  21
 #define BSIZE_DEFAULT BSIZE_MIN
-#define DELAY_MIN 1
-#define DELAY_MAX 14
+#define DELAY_MIN   1
+#define DELAY_MAX  14
 #define DELAY_DEFAULT DELAY_MIN
+
+#define MNHTESTO_DEFAULT_POENA_FACTOR   (0.0l)
 
 
 static char d[1<<(BSIZE_MAX + 1)];
@@ -98,12 +102,11 @@ quota_init(mnhtesto_quota_t *quota, uint64_t now)
     quota->ts -= quota->ts % (unsigned)MNHTESTO_QUOTA_UNITS(quota);
     quota->value = 0.0;
     quota->prorated = 0.0;
-    quota->poena_factor = 1.0;
 }
 
 
 static int
-mnhtesto_update_quota(mnfcgi_request_t *req, int amount)
+mnhtesto_update_quota(mnfcgi_request_t *req, int amount, double *ra)
 {
     int res = 0;
     mnbytes_t *qname;
@@ -137,6 +140,8 @@ mnhtesto_update_quota(mnfcgi_request_t *req, int amount)
                      * 429
                      */
                     res = -1;
+                    *ra = (quota->value / MNHTESTO_QUOTA_LIMIT(quota)) *
+                            MNHTESTO_QUOTA_UNITS(quota);
 
                     s = mnhtest_unit_str(&quota->spec.denom_unit,
                                          quota->value, 0);
@@ -144,21 +149,26 @@ mnhtesto_update_quota(mnfcgi_request_t *req, int amount)
                                           quota->spec.denom, 0);
                     sss = mnhtest_unit_str(&quota->spec.divisor_unit,
                                            quota->spec.divisor, 0);
-                    CTRACE("current quota %s overuse: %s (over %s) per %s",
+                    CTRACE("current quota %s overuse: %s (over %s) per %s ra %lf sec",
                            BDATA(qname),
                            BDATA(s),
                            BDATA(ss),
-                           BDATA(sss));
+                           BDATA(sss),
+                           *ra);
 
                     BYTES_DECREF(&s);
                     BYTES_DECREF(&ss);
                     BYTES_DECREF(&sss);
+
+                    if (!quota->spec.flags & MNHTESTO_QF_SENDRA) {
+                        *ra = 0.0;
+                    }
                 }
 
             } else {
                 double normvalue;
 
-                normvalue = quota->poena_factor * quota->value;
+                normvalue = quota->spec.poena_factor * quota->value;
 
                 quota->prorated = MNHTESTO_QUOTA_PRORATE(
                     quota, normvalue + (double)amount, now);
@@ -178,7 +188,10 @@ mnhtesto_update_quota(mnfcgi_request_t *req, int amount)
                      * previous quota overuse, 429
                      */
                     quota->value = normvalue + (double)amount;
+
                     res = -1;
+                    *ra = (quota->prorated / MNHTESTO_QUOTA_LIMIT(quota)) *
+                            MNHTESTO_QUOTA_UNITS(quota) * MNHTESTO_QUOTAS(quota, now);
 
                     xtot = mnhtest_unit_str(&quota->spec.denom_unit,
                                          quota->value, 0);
@@ -191,14 +204,15 @@ mnhtesto_update_quota(mnfcgi_request_t *req, int amount)
                     ynom = mnhtest_unit_str(&quota->spec.divisor_unit,
                                            quota->spec.divisor, 0);
                     CTRACE("previous quota %s (%" PRId64 ") overuse: "
-                           "%s per %s (prorated %s) (over %s per %s)",
+                           "%s per %s (prorated %s) (over %s per %s) ra %lf sec",
                            BDATA(qname),
                            quota->ts,
                            BDATA(xtot),
                            BDATA(ytot),
                            BDATA(xp),
                            BDATA(xnom),
-                           BDATA(ynom));
+                           BDATA(ynom),
+                           *ra);
 
                     BYTES_DECREF(&xtot);
                     BYTES_DECREF(&ytot);
@@ -206,6 +220,9 @@ mnhtesto_update_quota(mnfcgi_request_t *req, int amount)
                     BYTES_DECREF(&xnom);
                     BYTES_DECREF(&ynom);
 
+                    if (!quota->spec.flags & MNHTESTO_QF_SENDRA) {
+                        *ra = 0.0;
+                    }
                 }
             }
         }
@@ -231,6 +248,7 @@ mnhtesto_root_get(mnfcgi_request_t *req, RESERVED void *__udata)
         int tts;
         int offset;
     } params;
+    double ra = 0.0l;
 
     /*
      *
@@ -265,7 +283,17 @@ mnhtesto_root_get(mnfcgi_request_t *req, RESERVED void *__udata)
 
     params.tts = (int)(1 << params.delay);
 
-    if (mnhtesto_update_quota(req, params.clen) != 0) {
+    if (mnhtesto_update_quota(req, params.clen, &ra) != 0) {
+        if (ra > 0.0l) {
+            if (MRKUNLIKELY((res = mnfcgi_request_field_addf(
+                                req,
+                                MNFCGI_FADD_OVERRIDE,
+                                &_retry_after,
+                                "%d",
+                                (int)(ra + 1.0l))) != 0)) {
+                goto end;
+            }
+        }
         mnfcgi_app_error(req, 429, &_too_much);
         update_stats(req, 429, 0);
         goto end;
@@ -392,12 +420,21 @@ mnhtesto_app_init(mnfcgi_app_t *app)
 }
 
 
+/**
+ * Quota specification:
+ *  name ":" denominator "/"
+ *
+ */
 int
 parse_quota(char *s)
 {
     int res = 0;
     char *p;
-    mnbytes_t *qname = NULL, *denom = NULL, *divisor = NULL;
+    mnbytes_t *qname = NULL;
+    mnbytes_t *denom = NULL;
+    mnbytes_t *divisor = NULL;
+    mnbytes_t *poena_factor = NULL;
+    mnbytes_t *flags = NULL;
     mnhtesto_quota_t *quota;
     mnhash_item_t *hit;
 
@@ -415,7 +452,21 @@ parse_quota(char *s)
     denom = bytes_new_from_str(s);
 
     s = ++p;
-    divisor = bytes_new_from_str(s);
+    if ((p = strchr(s, ':')) != NULL) {
+        *p = '\0';
+        divisor = bytes_new_from_str(s);
+        s = ++p;
+        if ((p = strchr(s, ':')) != NULL) {
+            *p = '\0';
+            poena_factor = bytes_new_from_str(s);
+            s = ++p;
+            flags = bytes_new_from_str(s);
+        } else {
+            poena_factor = bytes_new_from_str(s);
+        }
+    } else {
+        divisor = bytes_new_from_str(s);
+    }
 
     if ((quota = malloc(sizeof(mnhtesto_quota_t))) == NULL) {
         FAIL("malloc");
@@ -433,6 +484,37 @@ parse_quota(char *s)
         goto err;
     }
 
+    if (poena_factor != NULL) {
+        double pf;
+
+        if ((pf = strtod((char *)BDATA(poena_factor), NULL)) == 0.0) {
+            if (errno != ERANGE) {
+                quota->spec.poena_factor = pf;
+            }
+        } else {
+            quota->spec.poena_factor = pf;
+        }
+    } else {
+        /* default */
+        quota->spec.poena_factor = MNHTESTO_DEFAULT_POENA_FACTOR;
+    }
+
+    quota->spec.flags = 0;
+    if (flags != NULL) {
+        unsigned char *p;
+
+        for (p = BDATA(flags); *p != '\0'; ++p) {
+            switch (*p) {
+            case 'h':
+                quota->spec.flags |= MNHTESTO_QF_SENDRA;
+                break;
+
+            default:
+                break;
+            }
+        }
+    }
+
     if ((hit = hash_get_item(&quotas, qname)) != NULL) {
         /*
          * duplicate quota
@@ -443,9 +525,17 @@ parse_quota(char *s)
     BYTES_INCREF(qname);
     hash_set_item(&quotas, qname, quota);
 
+    //CTRACE("pf %s/%lf fl %s/%08x",
+    //       BDATASAFE(poena_factor),
+    //       quota->spec.poena_factor,
+    //       BDATASAFE(flags),
+    //       quota->spec.flags);
+
 end:
     BYTES_DECREF(&denom);
     BYTES_DECREF(&divisor);
+    BYTES_DECREF(&poena_factor);
+    BYTES_DECREF(&flags);
     TRRET(res);
 
 err:
