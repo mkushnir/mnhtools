@@ -38,6 +38,7 @@ static int max_req;
 
 extern unsigned long nreq[600];
 extern unsigned long nbytes[600];
+extern mnhash_t quotas;
 
 
 static struct option optinfo[] = {
@@ -172,6 +173,27 @@ myterm(UNUSED int sig)
 }
 
 
+static int
+print_quotas(mnbytes_t *qname, mnhtesto_quota_t *quota, UNUSED void *udata)
+{
+    mnbytes_t *what;
+    //mnbytes_t *prorated;
+    mnbytes_t *per;
+
+    what = mnhtest_unit_str(&quota->spec.denom_unit, quota->value, MNHTEST_UNIT_STR_VBASE);
+    //prorated = mnhtest_unit_str(&quota->spec.denom_unit, quota->prorated, MNHTEST_UNIT_STR_VBASE);
+    per = mnhtest_unit_str(&quota->spec.divisor_unit, quota->spec.divisor, 0);
+    TRACEC("%s: %s per %s\n",
+           BDATA(qname),
+           BDATA(what),
+           BDATA(per));
+    BYTES_DECREF(&what);
+    //BYTES_DECREF(&prorated);
+    BYTES_DECREF(&per);
+    return 0;
+}
+
+
 static void
 print_stats(void)
 {
@@ -189,6 +211,8 @@ print_stats(void)
             nbytes[i] = 0;
         }
     }
+    TRACEC("\n");
+    hash_traverse(&quotas, (hash_traverser_t)print_quotas, NULL);
     TRACEC("\n");
 }
 

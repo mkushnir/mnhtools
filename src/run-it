@@ -14,6 +14,7 @@ then
         -Q qwe:1kb/5sec                \
         -Q asd:1mb/5sec                \
         -Q zxc:150req/15sec            \
+        -Q xcv:1req/5sec               \
         -Q xcv00:80req/5sec            \
         -Q xcv01:80req/5sec:1:h        \
         -Q cvb00:80req/5sec:0.5:h      \

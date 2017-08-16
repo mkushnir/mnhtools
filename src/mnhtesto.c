@@ -60,7 +60,7 @@ static char d[1<<(BSIZE_MAX + 1)];
 unsigned long nreq[600];
 unsigned long nbytes[600];
 
-static mnhash_t quotas;
+mnhash_t quotas;
 
 
 static void
@@ -144,7 +144,7 @@ mnhtesto_update_quota(mnfcgi_request_t *req, int amount, double *ra)
                             MNHTESTO_QUOTA_UNITS(quota);
 
                     s = mnhtest_unit_str(&quota->spec.denom_unit,
-                                         quota->value, 0);
+                                         quota->value, MNHTEST_UNIT_STR_VBASE);
                     ss = mnhtest_unit_str(&quota->spec.denom_unit,
                                           quota->spec.denom, 0);
                     sss = mnhtest_unit_str(&quota->spec.divisor_unit,
@@ -194,11 +194,11 @@ mnhtesto_update_quota(mnfcgi_request_t *req, int amount, double *ra)
                             MNHTESTO_QUOTA_UNITS(quota) * MNHTESTO_QUOTAS(quota, now);
 
                     xtot = mnhtest_unit_str(&quota->spec.denom_unit,
-                                         quota->value, 0);
+                                         quota->value, MNHTEST_UNIT_STR_VBASE);
                     ytot = mnhtest_unit_str(&quota->spec.divisor_unit,
                                            (double)(now - quota->ts), 0);
                     xp = mnhtest_unit_str(&quota->spec.denom_unit,
-                                          quota->prorated, 0);
+                                          quota->prorated, MNHTEST_UNIT_STR_VBASE);
                     xnom = mnhtest_unit_str(&quota->spec.denom_unit,
                                            quota->spec.denom, 0);
                     ynom = mnhtest_unit_str(&quota->spec.divisor_unit,

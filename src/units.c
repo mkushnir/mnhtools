@@ -167,6 +167,12 @@ mnhtest_unit_str(mnhtest_unit_t *unit, double v, int flags)
 {
     mnbytes_t *res = NULL;
 
+    if (flags & MNHTEST_UNIT_STR_VBASE) {
+        mnhtest_unit_t base = *unit;
+        base.mult = 1.0;
+        v = mnhtest_unit_normalize(unit, &base, v);
+    }
+
     if (unit->ty == MNHTEST_UREQ) {
         v *= unit->mult;
         if (v == 1.0) {
