@@ -389,6 +389,7 @@ mycb2(mnbytes_t **s, UNUSED void *udata)
     //CTRACE("url=%s bsize=%d delay=%d", BDATASAFE(*s), bsize, delay);
     (void)mnhttpc_request_out_field_addb(req, &_connection, &_close);
     (void)mnhttpc_request_out_field_addb(req, &_proxy_connection, &_close);
+
     (void)array_traverse(&headers, (array_traverser_t)add_header_cb, req);
 
     if (shutting_down) {
@@ -443,6 +444,9 @@ mycb1(mnbytes_t **s, void *udata)
 
     if ((quota = randomquota()) != NULL) {
         mnhttpc_request_out_field_addb(req, &_x_mnhtesto_quota, quota);
+        if (quota_selector != NULL) {
+            mnhttpc_request_out_field_addb(req, quota_selector, quota);
+        }
     }
 
     //CTRACE("url=%s bsize=%d delay=%d", BDATASAFE(*s), bsize, delay);
@@ -781,6 +785,7 @@ main(int argc, char **argv)
     SSL_load_error_strings();
     SSL_library_init();
     (void)mrkthr_init();
+    mrkthr_set_stacksize(4096 * 5);
     (void)MRKTHR_SPAWN("run0", run0, argc, argv);
     (void)mrkthr_loop();
     (void)mrkthr_fini();

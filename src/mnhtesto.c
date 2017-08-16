@@ -160,7 +160,7 @@ mnhtesto_update_quota(mnfcgi_request_t *req, int amount, double *ra)
                     BYTES_DECREF(&ss);
                     BYTES_DECREF(&sss);
 
-                    if (!quota->spec.flags & MNHTESTO_QF_SENDRA) {
+                    if (!(quota->spec.flags & MNHTESTO_QF_SENDRA)) {
                         *ra = 0.0;
                     }
                 }
@@ -220,7 +220,7 @@ mnhtesto_update_quota(mnfcgi_request_t *req, int amount, double *ra)
                     BYTES_DECREF(&xnom);
                     BYTES_DECREF(&ynom);
 
-                    if (!quota->spec.flags & MNHTESTO_QF_SENDRA) {
+                    if (!(quota->spec.flags & MNHTESTO_QF_SENDRA)) {
                         *ra = 0.0;
                     }
                 }
