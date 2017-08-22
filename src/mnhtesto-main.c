@@ -1,11 +1,14 @@
 #include <err.h>
+#include <fcntl.h>
 #include <getopt.h>
 #include <libgen.h>
+#include <limits.h>
 #include <signal.h>
 #include <stddef.h>
-#include <stdio.h>
 #include <stdint.h>
-#include <limits.h>
+#include <stdio.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include "config.h"
 
@@ -321,9 +324,41 @@ main(int argc, char **argv)
             break;
 
         case 'Q':
-            if (parse_quota(optarg) != 0) {
-                usage(argv[0]);
-                exit(1);
+            if (*optarg == '@') {
+                int fd;
+                struct stat sb;
+                char *buf;
+                char *s0, *s1;
+
+                if ((fd = open(optarg + 1, O_RDONLY)) == -1) {
+                    FAIL("open");
+                }
+                if (fstat(fd, &sb) == -1) {
+                    FAIL("fstat");
+                }
+                if ((buf = malloc(sb.st_size + 1)) == NULL) {
+                    FAIL("malloc");
+                }
+                if (read(fd, buf, sb.st_size) != sb.st_size) {
+                    FAIL("read");
+                }
+                buf[sb.st_size] = '\0';
+                (void)close(fd);
+                for (s0 = buf, s1 = strchr(s0, '\n');
+                     s1 != NULL;
+                     s0 = s1 + 1, s1 = strchr(s0, '\n')) {
+
+                    if (parse_quota(s0) != 0) {
+                        usage(argv[0]);
+                        exit(1);
+                    }
+                }
+                free(buf);
+            } else {
+                if (parse_quota(optarg) != 0) {
+                    usage(argv[0]);
+                    exit(1);
+                }
             }
             break;
 

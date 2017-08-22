@@ -6,9 +6,9 @@
 #include <signal.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
-#include <sys/stat.h>
 
 #include <openssl/ssl.h>
 
