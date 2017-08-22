@@ -3,8 +3,8 @@ ulimit -c 2000
 
 host=vm-pear-103
 host=mndo-01.mooo.com
-proxy=localhost
-delay=4500
+proxy=vm-pear-103
+delay=1000
 parallel=1
 quota=xcv
 
@@ -36,13 +36,22 @@ then
         -u https://$host:8443/qwe0b    \
         -p $parallel -A 2>&1 | tee out-c
 
+elif test "$1" = "c0"
+then
+    ./mnhtestc -u https://$host:8443/ -z $delay
+
 elif test "$1" = "c1"
 then
-    ./mnhtestc -u https://$host:8443/ -Q $quota -z $delay
+    ./mnhtestc -P $proxy -u http://$host:8080/ -z $delay
 
 elif test "$1" = "c2"
 then
-    ./mnhtestc -P $proxy -u https://$host:8443/ -Q $quota -S X-CL-RL -z $delay
+    ./mnhtestc -P $proxy -u http://$host:8080/ -Q $quota -S X-CL-RL -z $delay
+
+
+elif test "$1" = "c20"
+then
+    ./mnhtestc -P $proxy -u http://$host:8080/ -Q @quotas-qwe -S X-CL-RL -z $delay
 
 else
     echo 'Invalid arguments'
