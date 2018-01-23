@@ -29,7 +29,7 @@
 #include "diag.h"
 
 #ifndef NDEBUG
-const char *_malloc_options = "AJ";
+//const char *_malloc_options = "AJ";
 #endif
 
 typedef struct {
@@ -55,6 +55,7 @@ static int parallel = 0;
 static int batch_pause;
 static int use_bsize = 0;
 static int use_delay = 0;
+static int limit = 0;
 
 /*
  * Runtime.
@@ -111,6 +112,8 @@ static struct option optinfo[] = {
     {"quota", required_argument, NULL, 'Q'},
 #define MNHTESTC_OPT_QUOTA_SELECTOR 13
     {"quota-selector", required_argument, NULL, 'S'},
+#define MNHTESTC_OPT_LIMIT          14
+    {"limit", required_argument, &limit, 'l'},
 
     {NULL, 0, NULL, 0},
 };
@@ -199,6 +202,8 @@ usage(char *p)
 "  --quota=QUOTA|-Q QUOTA       Use thie quota.  Multiple.\n"
 "  --quota-selector=NAME|-S NAME\n"
 "                               Copy quota in this header.\n"
+"  --limit|-l NUM               Limit the number of calls per thread.\n"
+"                               Default is unlimited.\n"
         ,
         basename(p),
         MNHTEST_PARALLEL_DEFAULT
@@ -251,6 +256,11 @@ stats0(UNUSED int argc, UNUSED void **argv)
 {
     while (!shutting_down && mrkthr_sleep(2000) == 0) {
         unsigned i;
+
+        if (limit < 0) {
+            break;
+        }
+        CTRACE("limit=%d", limit);
 
         for (i = 0; i < countof(nreq); ++i) {
             if (nreq[i] > 0) {
@@ -482,12 +492,12 @@ run1(UNUSED int argc, UNUSED void **argv)
     } else {
         cb = (array_traverser_t)mycb2;
     }
-    while (!shutting_down) {
+    while (!shutting_down && limit--) {
         if (array_traverse(&urls, cb, &client) != 0) {
             break;
         }
         if (batch_pause > 0) {
-            if (mrkthr_sleep(batch_pause)) {
+            if (mrkthr_sleep(batch_pause) != 0) {
                 break;
             }
         }
@@ -531,6 +541,62 @@ print_config_headers(mnhtestc_header_t *header, mnbytestream_t *bs)
             BDATA(header->key), BDATA(header->value)) <= 0;
 }
 
+
+static void
+_print_config(char *prog)
+{
+    mnbytestream_t bs;
+
+    bytestream_init(&bs, 1024);
+
+    if (develop) {
+        bytestream_nprintf(&bs, 1024, " -d");
+    }
+
+    if (keepalive) {
+        bytestream_nprintf(&bs, 1024, " -A");
+    }
+
+    if (parallel != MNHTEST_PARALLEL_DEFAULT) {
+        bytestream_nprintf(&bs, 1024, " -p %d", parallel);
+    }
+
+    array_traverse(&urls, (array_traverser_t)print_config_urls, &bs);
+
+    if (proxy_host != NULL) {
+        bytestream_nprintf(&bs, 1024, " -P %s", BDATA(proxy_host));
+    }
+
+    if (proxy_port != NULL) {
+        bytestream_nprintf(&bs, 1024, ":%s", BDATA(proxy_port));
+    }
+
+    if (batch_pause > 0) {
+        bytestream_nprintf(&bs, 1024, " -z %d", batch_pause);
+    }
+
+    array_traverse(&headers,
+                   (array_traverser_t)print_config_headers, &bs);
+
+    if (use_delay) {
+        bytestream_nprintf(&bs, 1024, " -D");
+    }
+
+    if (use_bsize) {
+        bytestream_nprintf(&bs, 1024, " -B");
+    }
+
+    if (quota_selector != NULL) {
+        bytestream_nprintf(&bs, 1024, " -S %s", BDATA(quota_selector));
+    }
+
+
+    array_traverse(&quotas,
+                   (array_traverser_t)print_config_quotas, &bs);
+    printf("%s %s\n", basename(prog), SPDATA(&bs));
+
+    bytestream_fini(&bs);
+}
 
 int
 main(int argc, char **argv)
@@ -594,7 +660,11 @@ main(int argc, char **argv)
         FAIL("array_init");
     }
 
-    while ((ch = getopt_long(argc, argv, "AB:D:H:hP:p:Q:S:u:Vz:", optinfo, &idx)) != -1) {
+    while ((ch = getopt_long(argc,
+                             argv,
+                             "AB:D:H:hl:P:p:Q:S:u:Vz:",
+                             optinfo,
+                             &idx)) != -1) {
         switch (ch) {
         case 'A':
             keepalive = 1;
@@ -633,6 +703,10 @@ main(int argc, char **argv)
         case 'h':
             usage(argv[0]);
             exit(0);
+
+        case 'l':
+            limit = strtol(optarg, NULL, 10);
+            break;
 
         case 'p':
             parallel = strtol(optarg, NULL, 10);
@@ -687,7 +761,8 @@ main(int argc, char **argv)
                         mnbytes_t **quota;
 
                         *s1 = '\0';
-                        if (MRKUNLIKELY((quota = array_incr(&quotas)) == NULL)) {
+                        if (MRKUNLIKELY(
+                                (quota = array_incr(&quotas)) == NULL)) {
                             FAIL("array_incr");
                         }
                         *quota = bytes_new_from_str(s0);
@@ -744,6 +819,9 @@ main(int argc, char **argv)
         parallel = MNHTEST_PARALLEL_DEFAULT;
     }
 
+    limit = MAX(0, limit);
+    assert(limit >= 0);
+
     if (batch_pause < 0) {
         CTRACE("--pause cannot be negative.");
         usage(argv[0]);
@@ -757,55 +835,7 @@ main(int argc, char **argv)
     }
 
     if (print_config) {
-        mnbytestream_t bs;
-
-        bytestream_init(&bs, 1024);
-
-        if (develop) {
-            bytestream_nprintf(&bs, 1024, " -d");
-        }
-
-        if (keepalive) {
-            bytestream_nprintf(&bs, 1024, " -A");
-        }
-
-        if (parallel != MNHTEST_PARALLEL_DEFAULT) {
-            bytestream_nprintf(&bs, 1024, " -p %d", parallel);
-        }
-
-        array_traverse(&urls, (array_traverser_t)print_config_urls, &bs);
-
-        if (proxy_host != NULL) {
-            bytestream_nprintf(&bs, 1024, " -P %s", BDATA(proxy_host));
-        }
-
-        if (proxy_port != NULL) {
-            bytestream_nprintf(&bs, 1024, ":%s", BDATA(proxy_port));
-        }
-
-        if (batch_pause > 0) {
-            bytestream_nprintf(&bs, 1024, " -z %d", batch_pause);
-        }
-
-        array_traverse(&headers,
-                       (array_traverser_t)print_config_headers, &bs);
-
-        if (use_delay) {
-            bytestream_nprintf(&bs, 1024, " -D");
-        }
-
-        if (use_bsize) {
-            bytestream_nprintf(&bs, 1024, " -B");
-        }
-
-        if (quota_selector != NULL) {
-            bytestream_nprintf(&bs, 1024, " -S %s", BDATA(quota_selector));
-        }
-
-
-        array_traverse(&quotas,
-                       (array_traverser_t)print_config_quotas, &bs);
-        printf("%s %s\n", basename(argv[0]), SPDATA(&bs));
+        _print_config(argv[0]);
         exit(0);
     }
 

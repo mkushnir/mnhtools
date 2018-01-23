@@ -1,14 +1,17 @@
 #!/bin/sh
-ulimit -c 2000
+#ulimit -c 2000
 
-host=vm-pear-103
 host=mndo-01.mooo.com
-proxy=vm-pear-103
+#proxy=10.1.3.103
+proxy=localhost
 delay=1000
 parallel=1
 quota=xcv
 
-if test "$1" = "o"
+command=$1
+shift
+
+if test "$command" = "o"
 then
     ./mnhtesto                         \
         -Q qwe:1kb/5sec                \
@@ -20,7 +23,7 @@ then
         -Q cvb00:80req/5sec:0.5:h      \
         -P 9000 -C 1024 2>&1 | tee out-o
 
-elif test "$1" = "c"
+elif test "$command" = "c"
 then
     ./mnhtestc                         \
         -u https://$host:8443/         \
@@ -36,22 +39,55 @@ then
         -u https://$host:8443/qwe0b    \
         -p $parallel -A 2>&1 | tee out-c
 
-elif test "$1" = "c0"
+elif test "$command" = "c0"
 then
-    ./mnhtestc -u https://$host:8443/ -z $delay
+    #valgrind --suppressions=out.0 ./mnhtestc -u https://$host:8443/ -z $delay $@
+    #valgrind --leak-check=full --track-origins=yes --suppressions=out.0 ./mnhtestc -u https://$host:8443/ -z $delay $@
+    #valgrind --leak-check=full --track-origins=yes --gen-suppressions=all ./mnhtestc -u https://$host:8443/ -z $delay $@
+    #valgrind --gen-suppressions=all ./mnhtestc --help
+    #valgrind --leak-check=full --track-origins=yes ./mnhtestc -u https://$host:8443/ -z $delay $@
+    ./mnhtestc -u https://$host:8443/ -z $delay $@
 
-elif test "$1" = "c1"
+elif test "$command" = "c1"
 then
-    ./mnhtestc -P $proxy -u http://$host:8080/ -z $delay
+    ./mnhtestc -p $parallel -u https://$host:8443/ -z $delay $@
 
-elif test "$1" = "c2"
+elif test "$command" = "c2"
 then
-    ./mnhtestc -P $proxy -u http://$host:8080/ -Q $quota -S X-CL-RL -z $delay
+    ./mnhtestc -A -p $parallel -u https://$host:8443/ -z $delay $@
 
-
-elif test "$1" = "c20"
+elif test "$command" = "c10"
 then
-    ./mnhtestc -P $proxy -u http://$host:8080/ -Q @quotas-qwe -S X-CL-RL -z $delay
+    ./mnhtestc -P $proxy -u http://$host:8080/ -z $delay $@
+
+elif test "$command" = "c11"
+then
+    ./mnhtestc -p $parallel -P $proxy -u http://$host:8080/ -z $delay $@
+
+elif test "$command" = "c12"
+then
+    ./mnhtestc -A -p $parallel -P $proxy -u http://$host:8080/ -z $delay $@
+
+elif test "$command" = "c13"
+then
+    ./mnhtestc -P $proxy -u http://$host:8080/ -Q $quota -S X-CL-RL -z $delay $@
+
+
+elif test "$command" = "c20"
+then
+    ./mnhtestc -P $proxy -u http://$host:8080/ -Q @quotas-qwe -S X-CL-RL -z $delay $@
+
+elif test "$command" = "c21"
+then
+    ./mnhtestc -A -p $parallel -P $proxy -u http://$host:8080/ -Q @quotas-qwe -S X-CL-RL -z $delay $@
+
+elif test "$command" = "c22"
+then
+    ./mnhtestc -p $parallel -P $proxy -u http://$host:8080/ -Q @quotas-qwe -S X-CL-RL -z $delay $@
+
+elif test "$command" = "c30"
+then
+    ./mnhtestc -u http://$proxy:8080/$host/qwe02 -Q @quotas-qwe -S X-CL-RL -z $delay $@
 
 else
     echo 'Invalid arguments'

@@ -36,7 +36,7 @@ mnhtesto_CFLAGS = $(DEBUG_FLAGS) -Wall -Wextra -Werror -std=c99 @_GNU_SOURCE_MAC
 mnhtesto_LDFLAGS = -all-static -L$(libdir) -lmnfcgi -lmrkapp -lmrkthr -lmrkcommon -lmndiag -lm
 
 mnhtestc_CFLAGS = $(DEBUG_FLAGS) -Wall -Wextra -Werror -std=c99 @_GNU_SOURCE_MACRO@ @_XOPEN_SOURCE_MACRO@ -I$(top_srcdir)/src -I$(top_srcdir) -I$(includedir)
-#mnhtestc_LDFLAGS = -all-static -L$(libdir) -lmrkapp -lmrkthr -lmrkcommon -lz -lssl -lcrypto
+#mnhtestc_LDFLAGS = -all-static -L$(libdir) -lmrkapp -lmrkthr -lmrkcommon -lmndiag -lz -lssl -lcrypto
 mnhtestc_LDFLAGS = -L$(libdir) -lmrkapp -lmrkthr -lmrkcommon -lmndiag -lz -lssl -lcrypto
 
 diag.c diag.h: $(diags)
