@@ -11,7 +11,7 @@ quota=xcv
 command=$1
 shift
 
-if test "$command" = "o"
+if test "$command" = "o00"
 then
     ./mnhtesto                         \
         -Q qwe:1kb/5sec                \
@@ -21,7 +21,15 @@ then
         -Q xcv00:80req/5sec            \
         -Q xcv01:80req/5sec:1:h        \
         -Q cvb00:80req/5sec:0.5:h      \
-        -P 9000 -C 1024 2>&1 | tee out-o
+        -P 9000 -C 1024 2>&1 | tee out-o00
+
+elif test "$command" = "o01"
+then
+    ./mnhtesto                 \
+        --host=localhost       \
+        --port=9000            \
+        --max-conn=32768       \
+        --max-req=32768 2>&1 | tee out-o01
 
 elif test "$command" = "c"
 then
