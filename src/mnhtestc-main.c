@@ -20,6 +20,7 @@
 
 #include <mrkcommon/array.h>
 #include <mrkcommon/bytes.h>
+#define TRRET_DEBUG
 #include <mrkcommon/dumpm.h>
 #include <mrkcommon/util.h>
 
@@ -49,7 +50,7 @@ static int develop = 0;
 static int print_config = 0;
 static int keepalive = 0;
 #define MNHTEST_PARALLEL_MIN 1
-#define MNHTEST_PARALLEL_MAX 1000
+#define MNHTEST_PARALLEL_MAX 100000
 #define MNHTEST_PARALLEL_DEFAULT MNHTEST_PARALLEL_MIN
 static int parallel = 0;
 static int batch_pause;
@@ -199,6 +200,8 @@ usage(char *p)
 "                               No scheme prefix.\n"
 "  --pause=MSEC|-z MSEC         Pause before sending a URL batch.\n"
 "  --header=HEADER|-H HEADER    Send this header.  Multiple.\n"
+"  --delay=NUM|-D NUM           Request delay in log msec.\n"
+"  --bsize=NUM|-B NUM           Body size in log bytes.\n"
 "  --quota=QUOTA|-Q QUOTA       Use thie quota.  Multiple.\n"
 "  --quota-selector=NAME|-S NAME\n"
 "                               Copy quota in this header.\n"
@@ -254,13 +257,13 @@ myterm(UNUSED int sig)
 static int
 stats0(UNUSED int argc, UNUSED void **argv)
 {
-    while (!shutting_down && mrkthr_sleep(2000) == 0) {
+    while (!shutting_down && mrkthr_sleep(1000) == 0) {
         unsigned i;
 
-        if (limit < 0) {
-            break;
-        }
-        CTRACE("limit=%d", limit);
+        //if (limit < 0) {
+        //    break;
+        //}
+        //CTRACE("limit=%d", limit);
 
         for (i = 0; i < countof(nreq); ++i) {
             if (nreq[i] > 0) {
@@ -270,6 +273,10 @@ stats0(UNUSED int argc, UNUSED void **argv)
             }
         }
         TRACEC("\n");
+
+        if ((MRKTHR_GET_NOW_SEC() % 60) == 0) {
+            mrkthr_gc();
+        }
 
     }
     return 0;
@@ -366,6 +373,7 @@ mycb2(mnbytes_t **s, UNUSED void *udata)
     mnbytes_t *quota;
 
     if (shutting_down) {
+        CTRACE("shutting down");
         goto end;
     }
 
@@ -383,12 +391,20 @@ mycb2(mnbytes_t **s, UNUSED void *udata)
     }
 
     if (use_bsize) {
-        bsize = randombsize();
+        if (use_bsize < 0) {
+            bsize = randombsize();
+        } else {
+            bsize = use_bsize;
+        }
         mnhttpc_request_out_qterm_addb(req, &_bsiz, bytes_printf("%d", bsize));
     }
 
     if (use_delay) {
-        delay = randomdelay();
+        if (use_delay < 0) {
+            delay = randomdelay();
+        } else {
+            delay = use_delay;
+        }
         mnhttpc_request_out_qterm_addb(req, &_dlay, bytes_printf("%d", delay));
     }
 
@@ -406,10 +422,13 @@ mycb2(mnbytes_t **s, UNUSED void *udata)
     (void)array_traverse(&headers, (array_traverser_t)add_header_cb, req);
 
     if (shutting_down) {
+        CTRACE("shutting down");
         goto end;
     }
 
     if ((res = mnhttpc_request_finalize(req)) != 0) {
+        //CTRACE("mnhttpc_request_finalize failure");
+        //TR(res);
         goto end;
     }
 
@@ -429,6 +448,7 @@ mycb1(mnbytes_t **s, void *udata)
     mnbytes_t *quota;
 
     if (shutting_down) {
+        CTRACE("shutting down");
         goto end;
     }
 
@@ -446,12 +466,20 @@ mycb1(mnbytes_t **s, void *udata)
     }
 
     if (use_bsize) {
-        bsize = randombsize();
+        if (use_bsize < 0) {
+            bsize = randombsize();
+        } else {
+            bsize = use_bsize;
+        }
         mnhttpc_request_out_qterm_addb(req, &_bsiz, bytes_printf("%d", bsize));
     }
 
     if (use_delay) {
-        delay = randomdelay();
+        if (use_delay < 0) {
+            delay = randomdelay();
+        } else {
+            delay = use_delay;
+        }
         mnhttpc_request_out_qterm_addb(req, &_dlay, bytes_printf("%d", delay));
     }
 
@@ -465,10 +493,13 @@ mycb1(mnbytes_t **s, void *udata)
     //CTRACE("url=%s bsize=%d delay=%d", BDATASAFE(*s), bsize, delay);
     (void)array_traverse(&headers, (array_traverser_t)add_header_cb, req);
     if (shutting_down) {
+        CTRACE("shutting down");
         goto end;
     }
 
     if ((res = mnhttpc_request_finalize(req)) != 0) {
+        //CTRACE("mnhttpc_request_finalize failure");
+        //TR(res);
         goto end;
     }
 
@@ -478,31 +509,71 @@ end:
 }
 
 
+void mndiag_mrkapp_str(int, char *, size_t);
+
+
 static int
-run1(UNUSED int argc, UNUSED void **argv)
+run2(UNUSED int argc, UNUSED void **argv)
 {
+    int res = 0;
     mnhttpc_t client;
     array_traverser_t cb;
 
     mnhttpc_init(&client);
-
 
     if (keepalive) {
         cb = (array_traverser_t)mycb1;
     } else {
         cb = (array_traverser_t)mycb2;
     }
-    while (!shutting_down && limit--) {
-        if (array_traverse(&urls, cb, &client) != 0) {
+
+    while (!shutting_down && --limit) {
+        if ((res = array_traverse(&urls, cb, &client)) != 0) {
+            //char buf[64];
+            //mndiag_mrkapp_str(res, buf, sizeof(buf));
+            //CTRACE("client failure: %s", buf);
+            res = 0; // we want to report continue
             break;
         }
         if (batch_pause > 0) {
             if (mrkthr_sleep(batch_pause) != 0) {
+                res = -1;
                 break;
             }
         }
     }
     mnhttpc_fini(&client);
+    MRKTHRET(res);
+}
+
+
+void mndiag_mrkthr_str(int, char *, size_t);
+
+static int
+run1(UNUSED int argc, UNUSED void **argv)
+{
+    int res;
+
+    while (!shutting_down) {
+        mrkthr_ctx_t *child;
+        uint64_t delay;
+        char buf[64];
+
+        //CTRACE("Running...");
+        child = MRKTHR_SPAWN("run2", run2);
+        if (mrkthr_join(child) != 0) {
+            break;
+        }
+        delay = (1 << randomdelay()) * 20;
+        //res = mrkthr_set_retval(0);
+        //mndiag_mrkthr_str(res, buf, sizeof(buf));
+        //CTRACE("sleeping for %"PRId64" ms with corc %s", delay, buf);
+        if ((res = mrkthr_sleep(delay)) != 0) {
+            mndiag_mrkthr_str(res, buf, sizeof(buf));
+            CTRACE("breaking out res %s...", buf);
+            break;
+        }
+    }
     return 0;
 }
 
@@ -579,11 +650,11 @@ _print_config(char *prog)
                    (array_traverser_t)print_config_headers, &bs);
 
     if (use_delay) {
-        bytestream_nprintf(&bs, 1024, " -D");
+        bytestream_nprintf(&bs, 1024, " -D %d", use_delay);
     }
 
     if (use_bsize) {
-        bytestream_nprintf(&bs, 1024, " -B");
+        bytestream_nprintf(&bs, 1024, " -B %d", use_bsize);
     }
 
     if (quota_selector != NULL) {
@@ -671,11 +742,11 @@ main(int argc, char **argv)
             break;
 
         case 'B':
-            use_bsize = 1;
+            use_bsize = strtol(optarg, NULL, 10);
             break;
 
         case 'D':
-            use_delay = 1;
+            use_delay = strtol(optarg, NULL, 10);
             break;
 
         case 'H':
@@ -855,7 +926,7 @@ main(int argc, char **argv)
     SSL_load_error_strings();
     SSL_library_init();
     (void)mrkthr_init();
-    mrkthr_set_stacksize(4096 * 5);
+    mrkthr_set_stacksize(4096 * 6);
     (void)MRKTHR_SPAWN("run0", run0, argc, argv);
     (void)mrkthr_loop();
     (void)mrkthr_fini();

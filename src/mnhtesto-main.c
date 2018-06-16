@@ -38,6 +38,7 @@ static char *port;
 static int max_conn;
 #define MNHTESTO_DEFAULT_MAX_REQ 1
 static int max_req;
+static int suppress_quotas = 0;
 
 extern unsigned long nreq[600];
 extern unsigned long nbytes[600];
@@ -45,22 +46,24 @@ extern mnhash_t quotas;
 
 
 static struct option optinfo[] = {
-#define MNHTESTO_OPT_HELP    0
+#define MNHTESTO_OPT_HELP           0
     {"help", no_argument, NULL, 'h'},
-#define MNHTESTO_OPT_VERSION 1
+#define MNHTESTO_OPT_VERSION        1
     {"version", no_argument, NULL, 'V'},
-#define MNHTESTO_OPT_DEVELOP 2
+#define MNHTESTO_OPT_DEVELOP        2
     {"develop", no_argument, &develop, 1},
-#define MNHTESTO_OPT_HOST    3
+#define MNHTESTO_OPT_HOST           3
     {"host", required_argument, NULL, 'H'},
-#define MNHTESTO_OPT_PORT    4
+#define MNHTESTO_OPT_PORT           4
     {"port", required_argument, NULL, 'P'},
-#define MNHTESTO_MAX_CONN    5
+#define MNHTESTO_MAX_CONN           5
     {"max-conn", required_argument, NULL, 'C'},
-#define MNHTESTO_MAX_REQ     6
+#define MNHTESTO_MAX_REQ            6
     {"max-req", required_argument, NULL, 'R'},
-#define MNHTESTO_QUOTA       7
+#define MNHTESTO_QUOTA              7
     {"quota", required_argument, NULL, 'Q'},
+#define MNHTESTO_SUPPRESS_QUOTAS    8
+    {"suppress-quotas", no_argument, &suppress_quotas, 1},
 
     {NULL, 0, NULL, 0},
 };
@@ -215,15 +218,17 @@ print_stats(void)
         }
     }
     TRACEC("\n");
-    hash_traverse(&quotas, (hash_traverser_t)print_quotas, NULL);
-    TRACEC("\n");
+    if (!suppress_quotas) {
+        hash_traverse(&quotas, (hash_traverser_t)print_quotas, NULL);
+        TRACEC("\n");
+    }
 }
 
 
 static int
 stats0(UNUSED int argc, UNUSED void **argv)
 {
-    while (mrkthr_sleep(2000) == 0) {
+    while (mrkthr_sleep(1000) == 0) {
         print_stats();
     }
     return 0;
