@@ -206,6 +206,10 @@ print_stats(void)
     mnfcgi_stats_t *stats;
     unsigned i;
 
+    if (fcgi_app == NULL) {
+        return;
+    }
+
     stats = mnfcgi_app_get_stats(fcgi_app);
 
     TRACEC("nthreads %d", stats->nthreads);
