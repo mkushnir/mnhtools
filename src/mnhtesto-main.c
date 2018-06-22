@@ -73,7 +73,7 @@ static struct option optinfo[] = {
  * Run-time contxt.
  */
 bool shutting_down = false;
-bool sigshutdown_sent = false;
+int sigshutdown_sent = 0;
 
 static mnfcgi_app_t *fcgi_app = NULL;
 

@@ -62,7 +62,7 @@ static int limit = 0;
  * Runtime.
  */
 static bool shutting_down = false;
-static bool sigshutdown_sent = false;
+static int sigshutdown_sent = 0;
 
 /*
  * mnbytes_t *
