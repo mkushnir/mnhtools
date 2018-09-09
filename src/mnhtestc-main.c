@@ -56,7 +56,7 @@ static int parallel = 0;
 static int batch_pause;
 static int use_bsize = 0;
 static int use_delay = 0;
-static int limit = 0;
+static int limit = INT_MAX;
 
 /*
  * Runtime.
@@ -260,10 +260,9 @@ stats0(UNUSED int argc, UNUSED void **argv)
     while (!shutting_down && mrkthr_sleep(1000) == 0) {
         unsigned i;
 
-        //if (limit < 0) {
-        //    break;
-        //}
-        //CTRACE("limit=%d", limit);
+        if (limit <= 0) {
+            break;
+        }
 
         for (i = 0; i < countof(nreq); ++i) {
             if (nreq[i] > 0) {
@@ -527,7 +526,7 @@ run2(UNUSED int argc, UNUSED void **argv)
         cb = (array_traverser_t)mycb2;
     }
 
-    while (!shutting_down && --limit) {
+    while (!shutting_down && (--limit > 0)) {
         if ((res = array_traverse(&urls, cb, &client)) != 0) {
             //char buf[64];
             //mndiag_mrkapp_str(res, buf, sizeof(buf));
@@ -554,7 +553,7 @@ run1(UNUSED int argc, UNUSED void **argv)
 {
     int res;
 
-    while (!shutting_down) {
+    while (!shutting_down && (limit > 0)) {
         mrkthr_ctx_t *child;
         uint64_t delay;
         char buf[64];
@@ -926,7 +925,7 @@ main(int argc, char **argv)
     SSL_load_error_strings();
     SSL_library_init();
     (void)mrkthr_init();
-    mrkthr_set_stacksize(4096 * 6);
+    mrkthr_set_stacksize(4096 * 7);
     (void)MRKTHR_SPAWN("run0", run0, argc, argv);
     (void)mrkthr_loop();
     (void)mrkthr_fini();
