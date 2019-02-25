@@ -869,7 +869,7 @@ main(int argc, char **argv)
             break;
 
         case 'V':
-            printf("%s\n", VERSION);
+            printf("%s\n", PACKAGE_STRING);
             exit(0);
 
         case 'z':
