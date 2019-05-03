@@ -291,10 +291,10 @@ parse_retry_after(mnbytes_t *s)
 
     assert(s != NULL);
 
-    if (strptime((char *)BDATA(s), "%a, %d %b %Y %H:%M:%S %Z", &t) != NULL) {
+    if (strptime(BCDATA(s), "%a, %d %b %Y %H:%M:%S %Z", &t) != NULL) {
         tt = mktime(&t);
 
-    } else if ((seconds = strtol((char *)BDATA(s), NULL, 10)) != 0) {
+    } else if ((seconds = strtol(BCDATA(s), NULL, 10)) != 0) {
         tt = MRKTHR_GET_NOW_SEC() + seconds;
 
     } else {

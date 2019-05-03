@@ -75,7 +75,7 @@ mnhtest_unit_parse(mnhtest_unit_t *unit, mnbytes_t *s, double *v)
 
     mnhtest_unit_init(unit, 0, 0.0);
 
-    if ((*v = strtod((const char *)BDATA(s), &endptr)) == 0.0) {
+    if ((*v = strtod(BCDATA(s), &endptr)) == 0.0) {
         if (errno == ERANGE) {
             TRRETNULL(MNHTEST_UNIT_PARSE + 1);
         } else {

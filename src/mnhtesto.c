@@ -262,7 +262,7 @@ mnhtesto_root_get(mnfcgi_request_t *req, RESERVED void *__udata)
         params.bsize = BSIZE_DEFAULT;
     } else {
         //CTRACE("bsiz=%s", BDATA(bsiz));
-        params.bsize = strtol((char *)BDATA(bsiz), NULL, 10);
+        params.bsize = strtol(BCDATA(bsiz), NULL, 10);
         if (!INB0(BSIZE_MIN, params.bsize, BSIZE_MAX)) {
             params.bsize = BSIZE_DEFAULT;
         }
@@ -275,7 +275,7 @@ mnhtesto_root_get(mnfcgi_request_t *req, RESERVED void *__udata)
         params.delay = DELAY_DEFAULT;
     } else {
         //CTRACE("dlay=%s", BDATA(dlay));
-        params.delay = strtol((char *)BDATA(dlay), NULL, 10);
+        params.delay = strtol(BCDATA(dlay), NULL, 10);
         if (!INB0(DELAY_MIN, params.delay, DELAY_MAX)) {
             params.delay = DELAY_DEFAULT;
         }
@@ -487,7 +487,7 @@ parse_quota(char *s)
     if (poena_factor != NULL) {
         double pf;
 
-        if ((pf = strtod((char *)BDATA(poena_factor), NULL)) == 0.0) {
+        if ((pf = strtod(BCDATA(poena_factor), NULL)) == 0.0) {
             if (errno != ERANGE) {
                 quota->spec.poena_factor = pf;
             }
